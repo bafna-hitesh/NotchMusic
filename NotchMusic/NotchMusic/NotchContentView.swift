@@ -48,6 +48,7 @@ final class NotchStateController: ObservableObject {
 struct NotchContentView: View {
     @StateObject private var spotify = SpotifyController()
     @StateObject private var notchState = NotchStateController.shared
+    @State private var isHovering = false
     
     private let notchWidth: CGFloat = 340
     private let notchHeight: CGFloat = 38
@@ -65,11 +66,20 @@ struct NotchContentView: View {
     var body: some View {
         notchBody
             .frame(width: currentWidth, height: currentHeight)
+            .scaleEffect(isHovering && !notchState.isExpanded ? 1.02 : 1.0, anchor: .top)
+            .shadow(color: isHovering && !notchState.isExpanded ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: notchState.isExpanded)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .onTapGesture {
-                notchState.toggle()
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+                if !hovering && notchState.isExpanded {
+                    notchState.collapse()
+                }
             }
+            .onTapGesture {
+                notchState.expand()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 MusicBarsAnimationController.shared.isAnimating = spotify.isPlaying
             }
