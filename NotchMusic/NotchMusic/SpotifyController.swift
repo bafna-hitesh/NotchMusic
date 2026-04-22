@@ -8,6 +8,8 @@ extension Notification.Name {
 }
 
 final class SpotifyController: ObservableObject {
+    static let shared = SpotifyController()
+    
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var isSpotifyRunning: Bool = false
     @Published private(set) var trackName: String = ""
@@ -35,23 +37,12 @@ final class SpotifyController: ObservableObject {
     
     private let targetImageSize: CGFloat = 64
     
-    init() {
+    private init() {
         setupCachedScripts()
         setupSpotifyNotifications()
         setupWorkspaceNotifications()
         checkSpotifyRunning()
         updateNowPlaying()
-    }
-    
-    deinit {
-        DistributedNotificationCenter.default().removeObserver(self)
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
-        urlSession.invalidateAndCancel()
-        cachedScript = nil
-        cachedArtworkScript = nil
-        cachedPlayPauseScript = nil
-        cachedNextScript = nil
-        cachedPreviousScript = nil
     }
     
     private func setupWorkspaceNotifications() {

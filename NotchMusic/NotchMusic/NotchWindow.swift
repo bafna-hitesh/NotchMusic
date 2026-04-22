@@ -1,19 +1,26 @@
 import AppKit
 import SwiftUI
 
+// Shared constants to avoid magic number duplication
+enum NotchConstants {
+    static let windowWidth: CGFloat = 400
+    static let windowHeight: CGFloat = 170
+    static let collapsedWidth: CGFloat = 340
+    static let collapsedHeight: CGFloat = 38
+    static let expandedWidth: CGFloat = 400
+    static let expandedHeight: CGFloat = 160
+}
+
 class PassThroughHostingView<Content: View>: NSHostingView<Content> {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let isExpanded = NotchStateController.shared.isExpanded
         
-        let width: CGFloat = isExpanded ? 400 : 340
-        let height: CGFloat = isExpanded ? 160 : 38
-        
-        let windowWidth: CGFloat = 400
-        let windowHeight: CGFloat = 170
+        let width = isExpanded ? NotchConstants.expandedWidth : NotchConstants.collapsedWidth
+        let height = isExpanded ? NotchConstants.expandedHeight : NotchConstants.collapsedHeight
         
         let hitRect = NSRect(
-            x: (windowWidth - width) / 2,
-            y: windowHeight - height,
+            x: (NotchConstants.windowWidth - width) / 2,
+            y: NotchConstants.windowHeight - height,
             width: width,
             height: height
         )
@@ -27,7 +34,10 @@ class PassThroughHostingView<Content: View>: NSHostingView<Content> {
 }
 
 final class NotchWindow: NSWindow {
-    private var mouseMonitor: Any?
+    private var localMouseMonitor: Any?
+    private var globalMouseMonitor: Any?
+    private var lastMouseUpdateTime: TimeInterval = 0
+    private let mouseUpdateThrottleInterval: TimeInterval = 1.0 / 30.0 // Max 30 updates per second
     
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
@@ -49,30 +59,35 @@ final class NotchWindow: NSWindow {
     }
     
     private func setupMouseTracking() {
-        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .rightMouseDown]) { [weak self] event in
-            self?.updateIgnoresMouseEvents()
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseEntered, .mouseExited]) { [weak self] event in
+            self?.throttledUpdateIgnoresMouseEvents()
             return event
         }
         
-        // Also add global monitor to track mouse when outside the app
-        NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
-            self?.updateIgnoresMouseEvents()
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+            self?.throttledUpdateIgnoresMouseEvents()
         }
     }
     
-    private func updateIgnoresMouseEvents() {
+    private func throttledUpdateIgnoresMouseEvents() {
+        let now = CACurrentMediaTime()
+        guard now - lastMouseUpdateTime >= mouseUpdateThrottleInterval else { return }
+        lastMouseUpdateTime = now
+        
         let mouseLocation = NSEvent.mouseLocation
         let isInNotch = isPointInNotchArea(mouseLocation)
-        ignoresMouseEvents = !isInNotch
+        
+        if ignoresMouseEvents == isInNotch {
+            ignoresMouseEvents = !isInNotch
+        }
     }
     
     private func isPointInNotchArea(_ screenPoint: NSPoint) -> Bool {
         let isExpanded = NotchStateController.shared.isExpanded
         
-        let notchWidth: CGFloat = isExpanded ? 400 : 340
-        let notchHeight: CGFloat = isExpanded ? 160 : 38
+        let notchWidth = isExpanded ? NotchConstants.expandedWidth : NotchConstants.collapsedWidth
+        let notchHeight = isExpanded ? NotchConstants.expandedHeight : NotchConstants.collapsedHeight
         
-        // Calculate notch rect in screen coordinates
         let windowFrame = frame
         let notchX = windowFrame.midX - (notchWidth / 2)
         let notchY = windowFrame.maxY - notchHeight
@@ -86,7 +101,10 @@ final class NotchWindow: NSWindow {
     override var canBecomeMain: Bool { false }
     
     deinit {
-        if let monitor = mouseMonitor {
+        if let monitor = localMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = globalMouseMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }

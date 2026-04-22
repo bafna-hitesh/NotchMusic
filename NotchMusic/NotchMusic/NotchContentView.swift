@@ -46,21 +46,16 @@ final class NotchStateController: ObservableObject {
 }
 
 struct NotchContentView: View {
-    @StateObject private var spotify = SpotifyController()
+    @ObservedObject private var spotify = SpotifyController.shared
     @StateObject private var notchState = NotchStateController.shared
     @State private var isHovering = false
     
-    private let notchWidth: CGFloat = 340
-    private let notchHeight: CGFloat = 38
-    private let expandedWidth: CGFloat = 400
-    private let expandedHeight: CGFloat = 160
-    
     private var currentWidth: CGFloat {
-        notchState.isExpanded ? expandedWidth : notchWidth
+        notchState.isExpanded ? NotchConstants.expandedWidth : NotchConstants.collapsedWidth
     }
     
     private var currentHeight: CGFloat {
-        notchState.isExpanded ? expandedHeight : notchHeight
+        notchState.isExpanded ? NotchConstants.expandedHeight : NotchConstants.collapsedHeight
     }
     
     var body: some View {
@@ -339,8 +334,27 @@ final class MusicBarsAnimationController: ObservableObject {
     }
     
     private var timer: Timer?
+    private var spotifyObserver: Any?
     
-    private init() {}
+    private init() {
+        spotifyObserver = NotificationCenter.default.addObserver(
+            forName: .spotifyRunningStateChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let isRunning = notification.userInfo?["isRunning"] as? Bool ?? false
+            if !isRunning {
+                self?.isAnimating = false
+            }
+        }
+    }
+    
+    deinit {
+        stopTimer()
+        if let observer = spotifyObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
     
     private func startTimer() {
         timer?.invalidate()
