@@ -2,6 +2,10 @@ import Foundation
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    static let spotifyPlaybackStarted = Notification.Name("spotifyPlaybackStarted")
+}
+
 final class SpotifyController: ObservableObject {
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var trackName: String = ""
@@ -68,7 +72,12 @@ final class SpotifyController: ObservableObject {
             let trackId = userInfo["Track ID"] as? String ?? ""
             
             if self.isPlaying != newIsPlaying {
+                let wasPlaying = self.isPlaying
                 self.isPlaying = newIsPlaying
+                
+                if newIsPlaying && !wasPlaying {
+                    NotificationCenter.default.post(name: .spotifyPlaybackStarted, object: nil)
+                }
             }
             
             if self.lastTrackId != trackId || self.trackName != newTrackName {
@@ -269,7 +278,12 @@ final class SpotifyController: ObservableObject {
                 let newTrackId = info?.trackId ?? ""
                 
                 if self.isPlaying != newIsPlaying {
+                    let wasPlaying = self.isPlaying
                     self.isPlaying = newIsPlaying
+                    
+                    if newIsPlaying && !wasPlaying {
+                        NotificationCenter.default.post(name: .spotifyPlaybackStarted, object: nil)
+                    }
                 }
                 
                 if self.lastTrackId != newTrackId {

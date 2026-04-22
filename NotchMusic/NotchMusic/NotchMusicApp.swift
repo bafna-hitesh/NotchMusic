@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
 
 @main
 struct NotchMusicApp: App {
@@ -17,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var globalEventMonitor: Any?
     private var displayChangeObserver: Any?
+    private var playbackObserver: Any?
+    private var launchAtLoginItem: NSMenuItem?
     
     private let windowWidth: CGFloat = 400
     private let windowHeight: CGFloat = 170
@@ -27,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupNotchWindow()
         setupGlobalEventMonitor()
         setupDisplayChangeObserver()
+        setupPlaybackObserver()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -44,6 +48,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let observer = displayChangeObserver {
             NotificationCenter.default.removeObserver(observer)
             displayChangeObserver = nil
+        }
+        if let observer = playbackObserver {
+            NotificationCenter.default.removeObserver(observer)
+            playbackObserver = nil
+        }
+    }
+    
+    private func setupPlaybackObserver() {
+        playbackObserver = NotificationCenter.default.addObserver(
+            forName: .spotifyPlaybackStarted,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, let window = self.notchWindow else { return }
+            
+            if !window.isVisible {
+                window.orderFrontRegardless()
+            }
+            NotchStateController.shared.expand()
         }
     }
     
@@ -88,8 +111,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show/Hide", action: #selector(toggleNotch), keyEquivalent: "n"))
         menu.addItem(NSMenuItem.separator())
+        
+        launchAtLoginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        launchAtLoginItem?.state = isLaunchAtLoginEnabled ? .on : .off
+        menu.addItem(launchAtLoginItem!)
+        
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit NotchMusic", action: #selector(quitApp), keyEquivalent: "q"))
         statusItem?.menu = menu
+    }
+    
+    private var isLaunchAtLoginEnabled: Bool {
+        if #available(macOS 13.0, *) {
+            return SMAppService.mainApp.status == .enabled
+        }
+        return false
+    }
+    
+    @objc private func toggleLaunchAtLogin() {
+        if #available(macOS 13.0, *) {
+            do {
+                if SMAppService.mainApp.status == .enabled {
+                    try SMAppService.mainApp.unregister()
+                    launchAtLoginItem?.state = .off
+                } else {
+                    try SMAppService.mainApp.register()
+                    launchAtLoginItem?.state = .on
+                }
+            } catch {
+                print("Failed to toggle launch at login: \(error)")
+            }
+        }
     }
     
     private func setupNotchWindow() {

@@ -28,6 +28,14 @@ final class NotchStateController: ObservableObject {
         }
     }
     
+    func expand() {
+        if !isExpanded {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                isExpanded = true
+            }
+        }
+    }
+    
     func collapse() {
         if isExpanded {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
