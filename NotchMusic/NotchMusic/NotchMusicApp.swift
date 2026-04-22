@@ -75,8 +75,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self, let window = self.notchWindow else { return }
             
             let location = NSEvent.mouseLocation
-            if window.frame.contains(location) {
-                NotchStateController.shared.toggle()
+            let windowFrame = window.frame
+            
+            if windowFrame.contains(location) {
+                let isExpanded = NotchStateController.shared.isExpanded
+                let notchWidth: CGFloat = isExpanded ? 400 : 340
+                let notchHeight: CGFloat = isExpanded ? 160 : 38
+                
+                let notchX = windowFrame.midX - (notchWidth / 2)
+                let notchY = windowFrame.maxY - notchHeight
+                let notchRect = NSRect(x: notchX, y: notchY, width: notchWidth, height: notchHeight)
+                
+                if notchRect.contains(location) {
+                    NotchStateController.shared.toggle()
+                }
             } else {
                 NotchStateController.shared.collapse()
             }
@@ -159,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         
-        let hostingView = NSHostingView(rootView: NotchContentView())
+        let hostingView = PassThroughHostingView(rootView: NotchContentView())
         hostingView.frame = NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight)
         
         notchWindow?.contentView = hostingView
