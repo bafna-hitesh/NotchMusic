@@ -4,10 +4,12 @@ import SwiftUI
 
 extension Notification.Name {
     static let spotifyPlaybackStarted = Notification.Name("spotifyPlaybackStarted")
+    static let spotifyRunningStateChanged = Notification.Name("spotifyRunningStateChanged")
 }
 
 final class SpotifyController: ObservableObject {
     @Published private(set) var isPlaying: Bool = false
+    @Published private(set) var isSpotifyRunning: Bool = false
     @Published private(set) var trackName: String = ""
     @Published private(set) var artistName: String = ""
     @Published private(set) var albumName: String = ""
@@ -36,17 +38,72 @@ final class SpotifyController: ObservableObject {
     init() {
         setupCachedScripts()
         setupSpotifyNotifications()
+        setupWorkspaceNotifications()
+        checkSpotifyRunning()
         updateNowPlaying()
     }
     
     deinit {
         DistributedNotificationCenter.default().removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         urlSession.invalidateAndCancel()
         cachedScript = nil
         cachedArtworkScript = nil
         cachedPlayPauseScript = nil
         cachedNextScript = nil
         cachedPreviousScript = nil
+    }
+    
+    private func setupWorkspaceNotifications() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(appDidLaunch(_:)),
+            name: NSWorkspace.didLaunchApplicationNotification,
+            object: nil
+        )
+        
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(appDidTerminate(_:)),
+            name: NSWorkspace.didTerminateApplicationNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func appDidLaunch(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.bundleIdentifier == "com.spotify.client" else { return }
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.isSpotifyRunning = true
+            NotificationCenter.default.post(name: .spotifyRunningStateChanged, object: nil, userInfo: ["isRunning": true])
+        }
+    }
+    
+    @objc private func appDidTerminate(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.bundleIdentifier == "com.spotify.client" else { return }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.isSpotifyRunning = false
+            self.isPlaying = false
+            self.trackName = ""
+            self.artistName = ""
+            self.albumName = ""
+            self.artworkImage = nil
+            self.dominantColor = nil
+            self.lastTrackId = ""
+            NotificationCenter.default.post(name: .spotifyRunningStateChanged, object: nil, userInfo: ["isRunning": false])
+        }
+    }
+    
+    private func checkSpotifyRunning() {
+        let isRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.spotify.client" }
+        isSpotifyRunning = isRunning
+        if isRunning {
+            NotificationCenter.default.post(name: .spotifyRunningStateChanged, object: nil, userInfo: ["isRunning": true])
+        }
     }
     
     private func setupSpotifyNotifications() {

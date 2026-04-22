@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var globalEventMonitor: Any?
     private var displayChangeObserver: Any?
     private var playbackObserver: Any?
+    private var spotifyRunningObserver: Any?
     private var launchAtLoginItem: NSMenuItem?
     
     private let windowWidth: CGFloat = 400
@@ -31,6 +32,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupGlobalEventMonitor()
         setupDisplayChangeObserver()
         setupPlaybackObserver()
+        setupSpotifyRunningObserver()
+        
+        // Initially hide if Spotify is not running
+        let isSpotifyRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.spotify.client" }
+        if !isSpotifyRunning {
+            notchWindow?.orderOut(nil)
+        }
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -53,6 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(observer)
             playbackObserver = nil
         }
+        if let observer = spotifyRunningObserver {
+            NotificationCenter.default.removeObserver(observer)
+            spotifyRunningObserver = nil
+        }
     }
     
     private func setupPlaybackObserver() {
@@ -67,6 +79,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window.orderFrontRegardless()
             }
             NotchStateController.shared.expand()
+        }
+    }
+    
+    private func setupSpotifyRunningObserver() {
+        spotifyRunningObserver = NotificationCenter.default.addObserver(
+            forName: .spotifyRunningStateChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self, let window = self.notchWindow else { return }
+            
+            let isRunning = notification.userInfo?["isRunning"] as? Bool ?? false
+            
+            if isRunning {
+                window.orderFrontRegardless()
+            } else {
+                NotchStateController.shared.collapse()
+                window.orderOut(nil)
+            }
         }
     }
     
@@ -185,7 +216,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if window.isVisible {
             window.orderOut(nil)
         } else {
-            window.orderFrontRegardless()
+            // Only show if Spotify is running
+            let isSpotifyRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.spotify.client" }
+            if isSpotifyRunning {
+                window.orderFrontRegardless()
+            }
         }
     }
     
