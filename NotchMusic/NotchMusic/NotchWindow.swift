@@ -6,7 +6,8 @@ enum NotchConstants {
     static let windowWidth: CGFloat = 390
     static let windowHeight: CGFloat = 170
     static let collapsedWidth: CGFloat = 310
-    static let collapsedHeight: CGFloat = 58
+    static let collapsedHeight: CGFloat = 40
+    static let collapsedHeightWithLyrics: CGFloat = 58
     static let expandedWidth: CGFloat = 375
     static let expandedHeight: CGFloat = 160
 }
@@ -16,7 +17,10 @@ class PassThroughHostingView<Content: View>: NSHostingView<Content> {
         let isExpanded = NotchStateController.shared.isExpanded
         
         let width = isExpanded ? NotchConstants.expandedWidth : NotchConstants.collapsedWidth
-        let height = isExpanded ? NotchConstants.expandedHeight : NotchConstants.collapsedHeight
+        let showLyrics = UserDefaults.standard.bool(forKey: "showLyrics")
+        let collapsedH = showLyrics
+            ? NotchConstants.collapsedHeightWithLyrics : NotchConstants.collapsedHeight
+        let height = isExpanded ? NotchConstants.expandedHeight : collapsedH
         
         let hitRect = NSRect(
             x: (NotchConstants.windowWidth - width) / 2,

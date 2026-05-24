@@ -163,7 +163,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if windowFrame.contains(location) {
                 let isExpanded = NotchStateController.shared.isExpanded
                 let notchWidth = isExpanded ? NotchConstants.expandedWidth : NotchConstants.collapsedWidth
-                let notchHeight = isExpanded ? NotchConstants.expandedHeight : NotchConstants.collapsedHeight
+                let showLyrics = UserDefaults.standard.bool(forKey: "showLyrics")
+                let collapsedH = showLyrics
+                    ? NotchConstants.collapsedHeightWithLyrics : NotchConstants.collapsedHeight
+                let notchHeight = isExpanded ? NotchConstants.expandedHeight : collapsedH
 
                 let notchX = windowFrame.midX - (notchWidth / 2)
                 let notchY = windowFrame.maxY - notchHeight

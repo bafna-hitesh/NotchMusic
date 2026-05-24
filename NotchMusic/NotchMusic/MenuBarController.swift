@@ -10,7 +10,7 @@ final class MenuBarController: ObservableObject {
 
     let loginItemTitle = "Open at Login"
 
-    func setup() {
+    @MainActor func setup() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
             button.image = NSImage(
@@ -22,7 +22,7 @@ final class MenuBarController: ObservableObject {
         statusItem = item
         rebuildMenu()
 
-        // Update menu when track info changes
+        // Update menu when track info or lyrics toggle changes
         let spotify = SpotifyController.shared
         spotify.$trackName
             .dropFirst()
@@ -34,11 +34,16 @@ final class MenuBarController: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.rebuildMenu() }
             .store(in: &cancellables)
+        LyricsController.shared.$isEnabled
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildMenu() }
+            .store(in: &cancellables)
     }
 
     // MARK: - Menu
 
-    private func rebuildMenu() {
+    @MainActor private func rebuildMenu() {
         let menu = NSMenu()
 
         // Track info title
@@ -52,6 +57,16 @@ final class MenuBarController: ObservableObject {
         }
         menu.addItem(infoItem)
         menu.addItem(.separator())
+
+        // Show Lyrics toggle
+        let lyricsItem = NSMenuItem(
+            title: "Show Lyrics",
+            action: #selector(toggleShowLyrics),
+            keyEquivalent: ""
+        )
+        lyricsItem.target = self
+        lyricsItem.state = LyricsController.shared.isEnabled ? .on : .off
+        menu.addItem(lyricsItem)
 
         // Open at Login toggle
         let loginItem = NSMenuItem(
@@ -91,7 +106,12 @@ final class MenuBarController: ObservableObject {
 
     // MARK: - Actions
 
-    @objc private func toggleLoginItem() {
+    @MainActor @objc private func toggleShowLyrics() {
+        LyricsController.shared.isEnabled.toggle()
+        rebuildMenu()
+    }
+
+    @MainActor @objc private func toggleLoginItem() {
         do {
             if SMAppService.mainApp.status == .enabled {
                 try SMAppService.mainApp.unregister()

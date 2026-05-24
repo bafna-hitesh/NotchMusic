@@ -63,7 +63,9 @@ struct NotchContentView: View {
     }
     
     private var currentHeight: CGFloat {
-        notchState.isExpanded ? NotchConstants.expandedHeight : NotchConstants.collapsedHeight
+        if notchState.isExpanded { return NotchConstants.expandedHeight }
+        let showLyrics = UserDefaults.standard.bool(forKey: "showLyrics")
+        return showLyrics ? NotchConstants.collapsedHeightWithLyrics : NotchConstants.collapsedHeight
     }
     
     var body: some View {

@@ -8,6 +8,16 @@ final class LyricsController: ObservableObject {
     @Published private(set) var currentLine: String = ""
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var hasLyrics: Bool = false
+    @Published var isEnabled: Bool = UserDefaults.standard.bool(forKey: "showLyrics") {
+        didSet {
+            UserDefaults.standard.set(isEnabled, forKey: "showLyrics")
+            if isEnabled {
+                triggerFetchForCurrentTrack()
+            } else {
+                resetLyrics()
+            }
+        }
+    }
 
     private var syncedLines: [(time: TimeInterval, text: String)] = []
     private var plainLines: [String] = []
@@ -31,16 +41,20 @@ final class LyricsController: ObservableObject {
 
     private func setupObservers() {
         let spotify = SpotifyController.shared
-        let currentTrack = spotify.trackName
-        let currentArtist = spotify.artistName
-        if !currentTrack.isEmpty, !currentArtist.isEmpty {
-            fetchLyrics(artist: currentArtist, track: currentTrack)
+
+        if isEnabled {
+            let currentTrack = spotify.trackName
+            let currentArtist = spotify.artistName
+            if !currentTrack.isEmpty, !currentArtist.isEmpty {
+                fetchLyrics(artist: currentArtist, track: currentTrack)
+            }
         }
 
         spotify.$trackName
             .receive(on: DispatchQueue.main)
             .sink { [weak self] track in
                 guard let self = self else { return }
+                guard self.isEnabled else { return }
                 let artist = SpotifyController.shared.artistName
                 guard !track.isEmpty, !artist.isEmpty else { return }
                 self.resetLyrics()
@@ -254,6 +268,15 @@ final class LyricsController: ObservableObject {
                 .replacingOccurrences(of: "\r", with: " ")
             currentLine = newLine
         }
+    }
+
+    private func triggerFetchForCurrentTrack() {
+        let spotify = SpotifyController.shared
+        let track = spotify.trackName
+        let artist = spotify.artistName
+        guard !track.isEmpty, !artist.isEmpty else { return }
+        resetLyrics()
+        fetchLyrics(artist: artist, track: track)
     }
 
     // MARK: - Reset
