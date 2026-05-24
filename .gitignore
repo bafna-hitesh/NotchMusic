@@ -24,3 +24,6 @@ Package.resolved
 # Test files
 test*.swift
 NotchMusic/NotchMusic/Secrets.xcconfig
+
+# Release artifacts
+*.zip
