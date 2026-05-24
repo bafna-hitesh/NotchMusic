@@ -48,8 +48,15 @@ final class NotchStateController: ObservableObject {
 struct NotchContentView: View {
     @ObservedObject private var spotify = SpotifyController.shared
     @ObservedObject private var lyrics = LyricsController.shared
-    @StateObject private var notchState = NotchStateController.shared
+    @ObservedObject private var notchState = NotchStateController.shared
     @State private var isHovering = false
+
+    // MacBook Pro notch is physically dark — always match it.
+    private let notchFill = Color.black
+    private let primaryText = Color.white
+    private let secondaryText = Color.white.opacity(0.5)
+    private let tertiaryText = Color.white.opacity(0.3)
+    private let barColor = Color.white.opacity(0.8)
     
     private var currentWidth: CGFloat {
         notchState.isExpanded ? NotchConstants.expandedWidth : NotchConstants.collapsedWidth
@@ -61,6 +68,9 @@ struct NotchContentView: View {
     
     var body: some View {
         notchBody
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Music controls")
+            .accessibilityHint(notchState.isExpanded ? "Double-tap to collapse" : "Double-tap to expand")
             .frame(width: currentWidth, height: currentHeight)
             .scaleEffect(isHovering && !notchState.isExpanded ? 1.02 : 1.0, anchor: .top)
             .shadow(color: isHovering && !notchState.isExpanded ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
@@ -89,7 +99,7 @@ struct NotchContentView: View {
                 .clipShape(NotchShape(expandProgress: notchState.isExpanded ? 1 : 0))
             
             NotchShape(expandProgress: notchState.isExpanded ? 1 : 0)
-                .fill(.black)
+                .fill(notchFill)
             
             if notchState.isExpanded {
                 expandedContent
@@ -109,25 +119,33 @@ struct NotchContentView: View {
 
                 Spacer()
 
-                MusicBarsView(barCount: 3, spacing: 2, color: spotify.dominantColor ?? .white.opacity(0.8))
-                    .frame(width: 14, height: 10)
+                MusicBarsView(barCount: 4, spacing: 2, color: spotify.dominantColor ?? barColor)
+                    .frame(width: 16, height: 10)
                     .padding(.trailing, 20)
             }
 
             if lyrics.hasLyrics, !lyrics.currentLine.isEmpty {
                 Text(lyrics.currentLine)
                     .font(.system(size: 9, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(tertiaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 20)
-                    .padding(.top, 1)
+                    .padding(.top, 4)
+            } else if spotify.isSpotifyRunning, spotify.trackName.isEmpty {
+                Text("Open Spotify")
+                    .font(.system(size: 8, weight: .regular))
+                    .foregroundStyle(tertiaryText)
+                    .padding(.top, 4)
             }
         }
         .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(spotify.trackName.isEmpty ? "Not Playing" : spotify.trackName) by \(spotify.artistName)")
+        .accessibilityHint("Click to expand music controls")
     }
-    
+
     @ViewBuilder
     private var albumArtMini: some View {
         if let image = spotify.artworkImage {
@@ -156,7 +174,7 @@ struct NotchContentView: View {
             .overlay(
                 Image(systemName: "music.note")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(secondaryText)
             )
     }
     
@@ -168,18 +186,18 @@ struct NotchContentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(spotify.trackName.isEmpty ? "Not Playing" : spotify.trackName)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(primaryText)
                         .lineLimit(1)
                     
                     Text(spotify.artistName.isEmpty ? "Play something on Spotify" : spotify.artistName)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(secondaryText)
                         .lineLimit(1)
                     
                     if !spotify.albumName.isEmpty {
                         Text(spotify.albumName)
                             .font(.system(size: 10, weight: .regular))
-                            .foregroundStyle(.white.opacity(0.3))
+                            .foregroundStyle(tertiaryText)
                             .lineLimit(1)
                     }
                 }
@@ -193,12 +211,12 @@ struct NotchContentView: View {
                     if lyrics.isLoading {
                         Text("Loading lyrics...")
                             .font(.system(size: 10, weight: .regular))
-                            .foregroundStyle(.white.opacity(0.2))
+                            .foregroundStyle(tertiaryText.opacity(0.6))
                             .lineLimit(1)
                     } else {
                         Text(lyrics.currentLine.isEmpty ? " " : lyrics.currentLine)
                             .font(.system(size: 10, weight: .regular))
-                            .foregroundStyle(.white.opacity(0.3))
+                            .foregroundStyle(tertiaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .id(lyrics.currentLine)
@@ -207,7 +225,7 @@ struct NotchContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 24)
-                .padding(.top, 10)
+                .padding(.top, 12)
             }
 
             Spacer()
@@ -236,7 +254,7 @@ struct NotchContentView: View {
             if spotify.isPlaying {
                 ZStack {
                     Color.black.opacity(0.3)
-                    MusicBarsView(barCount: 4, spacing: 2, color: spotify.dominantColor ?? .white.opacity(0.8))
+                    MusicBarsView(barCount: 4, spacing: 2, color: spotify.dominantColor ?? barColor)
                         .frame(width: 18, height: 16)
                 }
             }
@@ -258,29 +276,40 @@ struct NotchContentView: View {
             .overlay(
                 Group {
                     if spotify.isPlaying {
-                        MusicBarsView(barCount: 4, spacing: 2, color: spotify.dominantColor ?? .white.opacity(0.8))
+                        MusicBarsView(barCount: 4, spacing: 2, color: spotify.dominantColor ?? barColor)
                             .frame(width: 18, height: 16)
                     } else {
                         Image(systemName: "music.note")
                             .font(.system(size: 20, weight: .light))
-                            .foregroundStyle(.white.opacity(0.3))
+                            .foregroundStyle(tertiaryText)
                     }
                 }
             )
     }
     
     private var playbackControls: some View {
-        HStack(spacing: 32) {
-            ControlButton(systemName: "backward.fill", size: 14) {
-                spotify.previous()
+        VStack(spacing: 6) {
+            HStack(spacing: 32) {
+                ControlButton(systemName: "backward.fill", size: 14) {
+                    spotify.previous()
+                }
+
+                ControlButton(systemName: spotify.isPlaying ? "pause.fill" : "play.fill", size: 20, isPrimary: true) {
+                    spotify.playPause()
+                }
+
+                ControlButton(systemName: "forward.fill", size: 14) {
+                    spotify.next()
+                }
             }
-            
-            ControlButton(systemName: spotify.isPlaying ? "pause.fill" : "play.fill", size: 20, isPrimary: true) {
-                spotify.playPause()
-            }
-            
-            ControlButton(systemName: "forward.fill", size: 14) {
-                spotify.next()
+
+            if let error = spotify.controlError {
+                Text(error)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.red.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+                    .transition(.opacity)
             }
         }
     }
@@ -379,14 +408,17 @@ final class MusicBarsAnimationController: ObservableObject {
 
     private func start() {
         stop()
-        heights = (0..<4).map { _ in CGFloat.random(in: 0.25...1.0) }
-        let t = Timer(timeInterval: 0.6, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.heights = (0..<4).map { _ in CGFloat.random(in: 0.25...1.0) }
+        tick()
+        let t = Timer(timeInterval: 0.65, repeats: true) { [weak self] _ in
+            self?.tick()
         }
-        t.tolerance = 0.25
+        t.tolerance = 0.3
         RunLoop.main.add(t, forMode: .common)
         timer = t
+    }
+
+    private func tick() {
+        heights = (0..<4).map { _ in CGFloat.random(in: 0.25...1.0) }
     }
 
     private func stop() {
@@ -413,7 +445,7 @@ final class BarsLayerView: NSView {
         wantsLayer = true
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) { return nil }
 
     func applyHeights() {
         guard let parentLayer = layer, !bounds.isEmpty else { return }
@@ -447,19 +479,17 @@ final class BarsLayerView: NSView {
                 ?? (layer.value(forKeyPath: "transform.scale.y") as? CGFloat)
                 ?? 0.2
 
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.setValue(max(0.05, target), forKeyPath: "transform.scale.y")
+            CATransaction.commit()
+
             let anim = CABasicAnimation(keyPath: "transform.scale.y")
             anim.fromValue = current
             anim.toValue = max(0.05, target)
             anim.duration = 0.4
             anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            anim.fillMode = .forwards
-            anim.isRemovedOnCompletion = false
             layer.add(anim, forKey: "barScale")
-
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer.setValue(max(0.05, target), forKeyPath: "transform.scale.y")
-            CATransaction.commit()
         }
     }
 
@@ -506,13 +536,17 @@ struct ControlButton: View {
                     .fill(.white.opacity(0.1))
                     .frame(width: 40, height: 40)
             }
-            
+
             Image(systemName: systemName)
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(isPrimary ? .white : .white.opacity(0.6))
         }
         .scaleEffect(isPressed ? 0.9 : 1.0)
         .animation(.easeOut(duration: 0.08), value: isPressed)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(systemName.replacingOccurrences(of: ".fill", with: ""))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($isPressed) { _, state, _ in
