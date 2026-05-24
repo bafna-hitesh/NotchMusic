@@ -7,13 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1000001001 /* NotchMusicApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002001; };
-		A1000001002 /* NotchWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002002; };
-		A1000001003 /* NotchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002003; };
-		A1000001004 /* SpotifyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002004; };
+		67116EAF2FC1E9E400DC690A /* LyricsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67116EAE2FC1E9E400DC690A /* LyricsController.swift */; };
+		A1000001001 /* NotchMusicApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002001 /* NotchMusicApp.swift */; };
+		A1000001002 /* NotchWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002002 /* NotchWindow.swift */; };
+		A1000001003 /* NotchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002003 /* NotchContentView.swift */; };
+		A1000001004 /* SpotifyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002004 /* SpotifyController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		67116EAE2FC1E9E400DC690A /* LyricsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsController.swift; sourceTree = "<group>"; };
 		A1000002001 /* NotchMusicApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchMusicApp.swift; sourceTree = "<group>"; };
 		A1000002002 /* NotchWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchWindow.swift; sourceTree = "<group>"; };
 		A1000002003 /* NotchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchContentView.swift; sourceTree = "<group>"; };
@@ -45,6 +47,7 @@
 		A1000005002 /* NotchMusic */ = {
 			isa = PBXGroup;
 			children = (
+				67116EAE2FC1E9E400DC690A /* LyricsController.swift */,
 				A1000002001 /* NotchMusicApp.swift */,
 				A1000002002 /* NotchWindow.swift */,
 				A1000002003 /* NotchContentView.swift */,
@@ -121,6 +124,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000001001 /* NotchMusicApp.swift in Sources */,
+				67116EAF2FC1E9E400DC690A /* LyricsController.swift in Sources */,
 				A1000001002 /* NotchWindow.swift in Sources */,
 				A1000001003 /* NotchContentView.swift in Sources */,
 				A1000001004 /* SpotifyController.swift in Sources */,

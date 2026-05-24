@@ -47,6 +47,7 @@ final class NotchStateController: ObservableObject {
 
 struct NotchContentView: View {
     @ObservedObject private var spotify = SpotifyController.shared
+    @ObservedObject private var lyrics = LyricsController.shared
     @StateObject private var notchState = NotchStateController.shared
     @State private var isHovering = false
     
@@ -63,8 +64,7 @@ struct NotchContentView: View {
             .frame(width: currentWidth, height: currentHeight)
             .scaleEffect(isHovering && !notchState.isExpanded ? 1.02 : 1.0, anchor: .top)
             .shadow(color: isHovering && !notchState.isExpanded ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: notchState.isExpanded)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHovering)
+            .animation(.easeOut(duration: 0.15), value: isHovering)
             .onHover { hovering in
                 isHovering = hovering
                 if !hovering && notchState.isExpanded {
@@ -102,15 +102,28 @@ struct NotchContentView: View {
     }
     
     private var collapsedContent: some View {
-        HStack(spacing: 0) {
-            albumArtMini
-                .padding(.leading, 22)
-            
-            Spacer()
-            
-            MusicBarsView(barCount: 3, spacing: 2, color: spotify.dominantColor ?? .white.opacity(0.8))
-                .frame(width: 14, height: 10)
-                .padding(.trailing, 22)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                albumArtMini
+                    .padding(.leading, 22)
+
+                Spacer()
+
+                MusicBarsView(barCount: 3, spacing: 2, color: spotify.dominantColor ?? .white.opacity(0.8))
+                    .frame(width: 14, height: 10)
+                    .padding(.trailing, 20)
+            }
+
+            if lyrics.hasLyrics, !lyrics.currentLine.isEmpty {
+                Text(lyrics.currentLine)
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 1)
+            }
         }
         .padding(.top, 2)
     }
@@ -174,7 +187,29 @@ struct NotchContentView: View {
             }
             .padding(.horizontal, 24)
             .padding(.top, 14)
-            
+
+            if lyrics.hasLyrics || lyrics.isLoading {
+                Group {
+                    if lyrics.isLoading {
+                        Text("Loading lyrics...")
+                            .font(.system(size: 10, weight: .regular))
+                            .foregroundStyle(.white.opacity(0.2))
+                            .lineLimit(1)
+                    } else {
+                        Text(lyrics.currentLine.isEmpty ? " " : lyrics.currentLine)
+                            .font(.system(size: 10, weight: .regular))
+                            .foregroundStyle(.white.opacity(0.3))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .id(lyrics.currentLine)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, 24)
+                .padding(.top, 10)
+            }
+
             Spacer()
             
             playbackControls
@@ -207,7 +242,7 @@ struct NotchContentView: View {
             }
         }
     }
-    
+
     private var defaultLargeArt: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(
@@ -319,23 +354,18 @@ struct NotchShape: Shape {
 
 final class MusicBarsAnimationController: ObservableObject {
     static let shared = MusicBarsAnimationController()
-    
+
     @Published private(set) var heights: [CGFloat] = [0.2, 0.2, 0.2, 0.2]
-    @Published var isAnimating: Bool = false {
-        didSet {
-            if isAnimating != oldValue {
-                if isAnimating {
-                    startTimer()
-                } else {
-                    stopTimer()
-                }
-            }
-        }
-    }
-    
+
     private var timer: Timer?
     private var spotifyObserver: Any?
-    
+
+    @Published var isAnimating: Bool = false {
+        didSet {
+            if isAnimating { start() } else { stop() }
+        }
+    }
+
     private init() {
         spotifyObserver = NotificationCenter.default.addObserver(
             forName: .spotifyRunningStateChanged,
@@ -343,57 +373,121 @@ final class MusicBarsAnimationController: ObservableObject {
             queue: .main
         ) { [weak self] notification in
             let isRunning = notification.userInfo?["isRunning"] as? Bool ?? false
-            if !isRunning {
-                self?.isAnimating = false
-            }
+            if !isRunning { self?.isAnimating = false }
         }
     }
-    
-    deinit {
-        stopTimer()
-        if let observer = spotifyObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-    }
-    
-    private func startTimer() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+
+    private func start() {
+        stop()
+        heights = (0..<4).map { _ in CGFloat.random(in: 0.25...1.0) }
+        let t = Timer(timeInterval: 0.6, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.heights = (0..<4).map { _ in CGFloat.random(in: 0.2...1.0) }
+            self.heights = (0..<4).map { _ in CGFloat.random(in: 0.25...1.0) }
         }
+        t.tolerance = 0.25
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
-    
-    private func stopTimer() {
+
+    private func stop() {
         timer?.invalidate()
         timer = nil
         heights = [0.2, 0.2, 0.2, 0.2]
     }
-}
 
-struct MusicBarsView: View {
-    var barCount: Int = 3
-    var spacing: CGFloat = 2
-    var color: Color = .white.opacity(0.8)
-    
-    @ObservedObject private var animationController = MusicBarsAnimationController.shared
-    
-    var body: some View {
-        HStack(spacing: spacing) {
-            ForEach(0..<barCount, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(color)
-                    .frame(width: 2.5)
-                    .scaleEffect(y: animationController.isAnimating ? animationController.heights[safe: index] ?? 0.2 : 0.2, anchor: .bottom)
-                    .animation(.easeInOut(duration: 0.2), value: animationController.heights)
-            }
-        }
+    deinit {
+        stop()
+        if let observer = spotifyObserver { NotificationCenter.default.removeObserver(observer) }
     }
 }
 
-extension Array {
-    subscript(safe index: Int) -> Element? {
-        return indices.contains(index) ? self[index] : nil
+final class BarsLayerView: NSView {
+    var barCount: Int = 3
+    var spacing: CGFloat = 2
+    var barColor: NSColor = .white
+    var targetHeights: [CGFloat] = []
+    private var barLayers: [CALayer] = []
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func applyHeights() {
+        guard let parentLayer = layer, !bounds.isEmpty else { return }
+
+        while barLayers.count < barCount {
+            let l = CALayer()
+            l.cornerRadius = 1
+            l.masksToBounds = true
+            l.anchorPoint = CGPoint(x: 0.5, y: 0)
+            l.backgroundColor = barColor.cgColor
+            parentLayer.addSublayer(l)
+            barLayers.append(l)
+        }
+        while barLayers.count > barCount {
+            barLayers.removeLast().removeFromSuperlayer()
+        }
+
+        let barW: CGFloat = 2.5
+        let totalW = CGFloat(barCount) * barW + CGFloat(barCount - 1) * spacing
+        let startX = (bounds.width - totalW) / 2
+
+        for (i, layer) in barLayers.enumerated() {
+            let target = i < targetHeights.count ? targetHeights[i] : 0.2
+            let x = startX + CGFloat(i) * (barW + spacing)
+
+            layer.backgroundColor = barColor.cgColor
+            layer.position = CGPoint(x: x + barW / 2, y: 0)
+            layer.bounds = CGRect(x: 0, y: 0, width: barW, height: bounds.height)
+
+            let current = (layer.presentation()?.value(forKeyPath: "transform.scale.y") as? CGFloat)
+                ?? (layer.value(forKeyPath: "transform.scale.y") as? CGFloat)
+                ?? 0.2
+
+            let anim = CABasicAnimation(keyPath: "transform.scale.y")
+            anim.fromValue = current
+            anim.toValue = max(0.05, target)
+            anim.duration = 0.4
+            anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            anim.fillMode = .forwards
+            anim.isRemovedOnCompletion = false
+            layer.add(anim, forKey: "barScale")
+
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.setValue(max(0.05, target), forKeyPath: "transform.scale.y")
+            CATransaction.commit()
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        applyHeights()
+    }
+}
+
+struct MusicBarsView: NSViewRepresentable {
+    var barCount: Int = 3
+    var spacing: CGFloat = 2
+    var color: Color = .white.opacity(0.8)
+
+    @ObservedObject private var controller = MusicBarsAnimationController.shared
+
+    func makeNSView(context: Context) -> BarsLayerView {
+        BarsLayerView()
+    }
+
+    func updateNSView(_ nsView: BarsLayerView, context: Context) {
+        nsView.barCount = barCount
+        nsView.spacing = spacing
+        nsView.barColor = NSColor(color)
+        nsView.targetHeights = controller.isAnimating
+            ? Array(controller.heights.prefix(barCount))
+            : Array(repeating: 0.2, count: barCount)
+        nsView.applyHeights()
     }
 }
 

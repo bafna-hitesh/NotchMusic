@@ -5,6 +5,7 @@ import SwiftUI
 extension Notification.Name {
     static let spotifyPlaybackStarted = Notification.Name("spotifyPlaybackStarted")
     static let spotifyRunningStateChanged = Notification.Name("spotifyRunningStateChanged")
+    static let spotifyHeartbeat = Notification.Name("spotifyHeartbeat")
 }
 
 final class SpotifyController: ObservableObject {
@@ -17,7 +18,11 @@ final class SpotifyController: ObservableObject {
     @Published private(set) var albumName: String = ""
     @Published private(set) var artworkImage: NSImage?
     @Published private(set) var dominantColor: Color?
-    
+    private(set) var playbackPosition: TimeInterval = 0
+
+    private var positionTimer: Timer?
+    private var lastPositionCorrection: TimeInterval = 0
+
     private var cachedScript: NSAppleScript?
     private var cachedArtworkScript: NSAppleScript?
     private var cachedPlayPauseScript: NSAppleScript?
@@ -36,7 +41,43 @@ final class SpotifyController: ObservableObject {
     }()
     
     private let targetImageSize: CGFloat = 64
-    
+
+    // MARK: - Position Timer
+
+    private func startPositionTimer() {
+        stopPositionTimer()
+        lastPositionCorrection = 0
+        let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.playbackPosition += 3.0
+            if self.playbackPosition - self.lastPositionCorrection > 30.0 {
+                self.correctPlaybackPosition()
+            }
+            NotificationCenter.default.post(name: .spotifyHeartbeat, object: nil)
+        }
+        timer.tolerance = 2.0
+        RunLoop.main.add(timer, forMode: .common)
+        positionTimer = timer
+    }
+
+    private func stopPositionTimer() {
+        positionTimer?.invalidate()
+        positionTimer = nil
+    }
+
+    private func correctPlaybackPosition() {
+        let script = NSAppleScript(source: """
+        tell application "Spotify"
+            return player position
+        end tell
+        """)
+        var error: NSDictionary?
+        if let result = script?.executeAndReturnError(&error).doubleValue, result > 0 {
+            playbackPosition = result
+            lastPositionCorrection = playbackPosition
+        }
+    }
+
     private init() {
         setupCachedScripts()
         setupSpotifyNotifications()
@@ -79,6 +120,8 @@ final class SpotifyController: ObservableObject {
             guard let self = self else { return }
             self.isSpotifyRunning = false
             self.isPlaying = false
+            self.stopPositionTimer()
+            self.playbackPosition = 0
             self.trackName = ""
             self.artistName = ""
             self.albumName = ""
@@ -122,17 +165,21 @@ final class SpotifyController: ObservableObject {
             if self.isPlaying != newIsPlaying {
                 let wasPlaying = self.isPlaying
                 self.isPlaying = newIsPlaying
-                
+
                 if newIsPlaying && !wasPlaying {
+                    self.startPositionTimer()
                     NotificationCenter.default.post(name: .spotifyPlaybackStarted, object: nil)
+                } else if !newIsPlaying {
+                    self.stopPositionTimer()
                 }
             }
-            
+
             if self.lastTrackId != trackId || self.trackName != newTrackName {
                 self.lastTrackId = trackId
                 self.trackName = newTrackName
                 self.artistName = newArtistName
                 self.albumName = newAlbumName
+                self.playbackPosition = 0
                 self.fetchArtwork(for: trackId)
             }
         }
@@ -312,35 +359,35 @@ final class SpotifyController: ObservableObject {
     }
     
     func updateNowPlaying() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             let info = self.getSpotifyInfo()
-            
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                
-                let newIsPlaying = info?.isPlaying ?? false
-                let newTrackName = info?.track ?? ""
-                let newArtistName = info?.artist ?? ""
-                let newAlbumName = info?.album ?? ""
-                let newTrackId = info?.trackId ?? ""
-                
-                if self.isPlaying != newIsPlaying {
-                    let wasPlaying = self.isPlaying
-                    self.isPlaying = newIsPlaying
-                    
-                    if newIsPlaying && !wasPlaying {
-                        NotificationCenter.default.post(name: .spotifyPlaybackStarted, object: nil)
-                    }
+
+            let newIsPlaying = info?.isPlaying ?? false
+            let newTrackName = info?.track ?? ""
+            let newArtistName = info?.artist ?? ""
+            let newAlbumName = info?.album ?? ""
+            let newTrackId = info?.trackId ?? ""
+
+            if self.isPlaying != newIsPlaying {
+                let wasPlaying = self.isPlaying
+                self.isPlaying = newIsPlaying
+
+                if newIsPlaying && !wasPlaying {
+                    self.startPositionTimer()
+                    NotificationCenter.default.post(name: .spotifyPlaybackStarted, object: nil)
+                } else if !newIsPlaying {
+                    self.stopPositionTimer()
                 }
-                
-                if self.lastTrackId != newTrackId {
-                    self.lastTrackId = newTrackId
-                    self.trackName = newTrackName
-                    self.artistName = newArtistName
-                    self.albumName = newAlbumName
-                    self.fetchArtwork(for: newTrackId)
-                }
+            }
+
+            if self.lastTrackId != newTrackId {
+                self.lastTrackId = newTrackId
+                self.trackName = newTrackName
+                self.artistName = newArtistName
+                self.albumName = newAlbumName
+                self.playbackPosition = 0
+                self.fetchArtwork(for: newTrackId)
             }
         }
     }
@@ -365,23 +412,17 @@ final class SpotifyController: ObservableObject {
     }
     
     func playPause() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var error: NSDictionary?
-            self?.cachedPlayPauseScript?.executeAndReturnError(&error)
-        }
+        var error: NSDictionary?
+        cachedPlayPauseScript?.executeAndReturnError(&error)
     }
-    
+
     func next() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var error: NSDictionary?
-            self?.cachedNextScript?.executeAndReturnError(&error)
-        }
+        var error: NSDictionary?
+        cachedNextScript?.executeAndReturnError(&error)
     }
-    
+
     func previous() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var error: NSDictionary?
-            self?.cachedPreviousScript?.executeAndReturnError(&error)
-        }
+        var error: NSDictionary?
+        cachedPreviousScript?.executeAndReturnError(&error)
     }
 }
