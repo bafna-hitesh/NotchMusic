@@ -17,6 +17,14 @@ final class LyricsController: ObservableObject {
     private var lastSyncedIndex: Int = -1
     private var lyricPositionTimer: Timer?
 
+    private lazy var urlSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.urlCache = nil
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 15
+        return URLSession(configuration: config)
+    }()
+
     private init() {
         setupObservers()
     }
@@ -58,11 +66,11 @@ final class LyricsController: ObservableObject {
 
     private func startLyricTimer() {
         stopLyricTimer()
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.updateLine(for: SpotifyController.shared.playbackPosition)
         }
-        timer.tolerance = 0.2
+        timer.tolerance = 0.3
         RunLoop.main.add(timer, forMode: .common)
         lyricPositionTimer = timer
     }
@@ -85,7 +93,7 @@ final class LyricsController: ObservableObject {
             return
         }
 
-        currentFetchTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+        currentFetchTask = urlSession.dataTask(with: url) { [weak self] data, _, error in
             guard let self, let data, error == nil else {
                 Task { @MainActor [weak self] in
                     self?.fetchFromSearch(artist: artist, track: track)
@@ -115,7 +123,7 @@ final class LyricsController: ObservableObject {
             return
         }
 
-        currentFetchTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+        currentFetchTask = urlSession.dataTask(with: url) { [weak self] data, _, error in
             guard let self, let data, error == nil else {
                 Task { @MainActor [weak self] in
                     self?.isLoading = false
