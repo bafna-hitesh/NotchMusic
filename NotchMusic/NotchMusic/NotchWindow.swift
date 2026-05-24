@@ -34,7 +34,6 @@ class PassThroughHostingView<Content: View>: NSHostingView<Content> {
 }
 
 final class NotchWindow: NSWindow {
-    private var trackingArea: NSTrackingArea?
 
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
@@ -42,32 +41,14 @@ final class NotchWindow: NSWindow {
         isOpaque = false
         backgroundColor = .clear
         level = .popUpMenu
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle, .transient]
         hasShadow = false
-        ignoresMouseEvents = false
+        ignoresMouseEvents = true
         isMovableByWindowBackground = false
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         isReleasedWhenClosed = false
         animationBehavior = .none
-    }
-
-    func installTrackingArea(in view: NSView) {
-        trackingArea = NSTrackingArea(
-            rect: view.bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        view.addTrackingArea(trackingArea!)
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        ignoresMouseEvents = false
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        ignoresMouseEvents = true
     }
 
     override var canBecomeKey: Bool { true }

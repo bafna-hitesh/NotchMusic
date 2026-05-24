@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 @main
 struct NotchMusicApp: App {
@@ -18,24 +19,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var displayChangeObserver: Any?
     private var playbackObserver: Any?
     private var spotifyRunningObserver: Any?
+    private var authResetObserver: Any?
+    private var authAttempted = false
+    private var cancellables = Set<AnyCancellable>()
+    private var quitKeyMonitor: Any?
+
+    private var targetScreen: NSScreen? {
+        let builtIn = NSScreen.screens.first { screen in
+            guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return false
+            }
+            return CGDisplayIsBuiltin(screenNumber.uint32Value) != 0
+        }
+        return builtIn ?? NSScreen.main ?? NSScreen.screens.first
+    }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        MenuBarController.shared.setup()
         setupNotchWindow()
         setupDisplayChangeObserver()
         setupPlaybackObserver()
         setupSpotifyRunningObserver()
 
+        // Toggle mouse passthrough: collapsed = transparent, expanded = interactive
+        NotchStateController.shared.$isExpanded
+            .sink { [weak self] isExpanded in
+                self?.notchWindow?.ignoresMouseEvents = !isExpanded
+            }
+            .store(in: &cancellables)
+
+        quitKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "q" {
+                NSApp.terminate(nil)
+                return nil
+            }
+            return event
+        }
+
         let isSpotifyRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.spotify.client" }
         if isSpotifyRunning {
+            notchWindow?.orderFrontRegardless()
             setupGlobalEventMonitor()
-        } else {
-            notchWindow?.orderOut(nil)
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         cleanupMonitors()
+        if let monitor = quitKeyMonitor { NSEvent.removeMonitor(monitor) }
         notchWindow?.orderOut(nil)
         notchWindow = nil
     }
@@ -53,6 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let observer = spotifyRunningObserver {
             NotificationCenter.default.removeObserver(observer)
             spotifyRunningObserver = nil
+        }
+        if let observer = authResetObserver {
+            NotificationCenter.default.removeObserver(observer)
+            authResetObserver = nil
         }
     }
 
@@ -75,6 +110,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window.orderFrontRegardless()
             }
             NotchStateController.shared.expand()
+
+            if !self.authAttempted {
+                self.authAttempted = true
+                let auth = SpotifyAuthController.shared
+                print("[App] playback started — isConfigured=\(auth.isConfigured), isAuthenticated=\(auth.isAuthenticated)")
+                if auth.isConfigured, !auth.isAuthenticated {
+                    print("[App] triggering authenticate()")
+                    auth.authenticate()
+                }
+            }
+        }
+
+        authResetObserver = NotificationCenter.default.addObserver(
+            forName: .spotifyAuthDidReset,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.authAttempted = false
         }
     }
 
@@ -136,7 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func repositionWindow() {
-        guard let window = notchWindow, let screen = NSScreen.main else { return }
+        guard let window = notchWindow, let screen = targetScreen else { return }
         
         let screenFrame = screen.frame
         let x = screenFrame.midX - (NotchConstants.windowWidth / 2)
@@ -144,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func setupNotchWindow() {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = targetScreen else { return }
         
         let screenFrame = screen.frame
         let x = screenFrame.midX - (NotchConstants.windowWidth / 2)
@@ -168,7 +221,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         notchWindow?.contentView = hostingView
         notchWindow?.setFrameTopLeftPoint(NSPoint(x: x, y: screenFrame.maxY))
-        notchWindow?.installTrackingArea(in: hostingView)
-        notchWindow?.orderFrontRegardless()
     }
 }

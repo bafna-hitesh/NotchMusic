@@ -18,10 +18,21 @@ final class SpotifyController: ObservableObject {
     @Published private(set) var albumName: String = ""
     @Published private(set) var artworkImage: NSImage?
     @Published private(set) var dominantColor: Color?
-    private(set) var playbackPosition: TimeInterval = 0
+    @Published var controlError: String?
+    private var positionBase: TimeInterval = 0
+    private var positionBaseTime = Date()
+    private var correctionTimer: Timer?
 
-    private var positionTimer: Timer?
-    private var lastPositionCorrection: TimeInterval = 0
+    /// Wall-clock interpolated position. Consumers poll this 2-10×/s so no timer needed.
+    var playbackPosition: TimeInterval {
+        guard isPlaying else { return positionBase }
+        return positionBase + Date().timeIntervalSince(positionBaseTime)
+    }
+
+    private func setPlaybackPosition(_ pos: TimeInterval) {
+        positionBase = pos
+        positionBaseTime = Date()
+    }
 
     private var cachedScript: NSAppleScript?
     private var cachedArtworkScript: NSAppleScript?
@@ -42,30 +53,96 @@ final class SpotifyController: ObservableObject {
     
     private let targetImageSize: CGFloat = 64
 
-    // MARK: - Position Timer
+    // MARK: - Position Tracking
 
     private func startPositionTimer() {
         stopPositionTimer()
-        lastPositionCorrection = 0
-        let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.playbackPosition += 3.0
-            if self.playbackPosition - self.lastPositionCorrection > 30.0 {
-                self.correctPlaybackPosition()
-            }
+        setPlaybackPosition(0)
+        correctionTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.fetchPlaybackState() }
             NotificationCenter.default.post(name: .spotifyHeartbeat, object: nil)
         }
-        timer.tolerance = 2.0
-        RunLoop.main.add(timer, forMode: .common)
-        positionTimer = timer
+        correctionTimer?.tolerance = 2.0
     }
 
     private func stopPositionTimer() {
-        positionTimer?.invalidate()
-        positionTimer = nil
+        correctionTimer?.invalidate()
+        correctionTimer = nil
     }
 
-    private func correctPlaybackPosition() {
+#if DEBUG
+    private var apiHealthCounter = 0
+#endif
+
+    @MainActor
+    private func fetchPlaybackState() async {
+        guard let token = await SpotifyAuthController.shared.getValidToken() else {
+            print("[SpotifyAPI] no token — falling back to AppleScript")
+            correctViaAppleScript()
+            return
+        }
+        var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/me/player/currently-playing")!)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.timeoutInterval = 5
+
+        guard let (data, response) = try? await urlSession.data(for: req),
+              let http = response as? HTTPURLResponse
+        else {
+            print("[SpotifyAPI] network error — falling back to AppleScript")
+            correctViaAppleScript()
+            return
+        }
+
+        if http.statusCode == 204 {
+            return
+        }
+
+        if http.statusCode == 401 {
+            print("[SpotifyAPI] 401 — refreshing token")
+            _ = await SpotifyAuthController.shared.refreshAccessToken()
+            correctViaAppleScript()
+            return
+        }
+
+        if http.statusCode == 429 {
+            print("[SpotifyAPI] 429 rate limited")
+            return
+        }
+
+        guard http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let progressMs = json["progress_ms"] as? TimeInterval
+        else {
+            print("[SpotifyAPI] unexpected response (HTTP \(http.statusCode))")
+            correctViaAppleScript()
+            return
+        }
+
+        setPlaybackPosition(progressMs / 1000.0)
+
+        // If API says paused but we think we're playing, we missed a notification
+        // (hardware media key, Touch Bar, etc). Self-correct before drift accumulates.
+        let apiIsPlaying = json["is_playing"] as? Bool ?? true
+        if !apiIsPlaying, isPlaying {
+            isPlaying = false
+            stopPositionTimer()
+        }
+
+#if DEBUG
+        // Periodic health log — once every ~30s so it's not noisy
+        apiHealthCounter += 1
+        if apiHealthCounter % 6 == 1 {
+            let item = json["item"] as? [String: Any]
+            let name = item?["name"] as? String ?? "?"
+            let artists = (item?["artists"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
+            print("[SpotifyAPI] OK | now: \(name) — \(artists.joined(separator: ", ")) | pos: \(Int(progressMs / 1000))s")
+        }
+#endif
+    }
+
+    private func correctViaAppleScript() {
         let script = NSAppleScript(source: """
         tell application "Spotify"
             return player position
@@ -73,8 +150,9 @@ final class SpotifyController: ObservableObject {
         """)
         var error: NSDictionary?
         if let result = script?.executeAndReturnError(&error).doubleValue, result > 0 {
-            playbackPosition = result
-            lastPositionCorrection = playbackPosition
+            setPlaybackPosition(result)
+        } else if error != nil {
+            print("[AppleScript] correctViaAppleScript error: \(error!)")
         }
     }
 
@@ -121,7 +199,7 @@ final class SpotifyController: ObservableObject {
             self.isSpotifyRunning = false
             self.isPlaying = false
             self.stopPositionTimer()
-            self.playbackPosition = 0
+            self.setPlaybackPosition(0)
             self.trackName = ""
             self.artistName = ""
             self.albumName = ""
@@ -179,12 +257,12 @@ final class SpotifyController: ObservableObject {
                 self.trackName = newTrackName
                 self.artistName = newArtistName
                 self.albumName = newAlbumName
-                self.playbackPosition = 0
+                self.setPlaybackPosition(0)
                 self.fetchArtwork(for: trackId)
             }
         }
     }
-    
+
     private func fetchArtwork(for trackId: String) {
         let fetchId = UUID()
         currentFetchId = fetchId
@@ -197,6 +275,7 @@ final class SpotifyController: ObservableObject {
                   let result = script.executeAndReturnError(&error).stringValue,
                   !result.isEmpty,
                   let url = URL(string: result) else {
+                if let error = error { print("[AppleScript] fetchArtwork error: \(error)") }
                 self.resetArtwork(for: trackId, fetchId: fetchId)
                 return
             }
@@ -204,46 +283,36 @@ final class SpotifyController: ObservableObject {
             self.urlSession.dataTask(with: url) { [weak self] data, response, error in
                 guard let self = self,
                       self.currentFetchId == fetchId,
-                      let data = data,
-                      let originalImage = NSImage(data: data) else {
+                      let data = data else {
                     self?.resetArtwork(for: trackId, fetchId: fetchId)
                     return
                 }
-                
-                let downsampledImage = self.downsample(image: originalImage, to: self.targetImageSize)
-                let color = self.averageColor(from: downsampledImage ?? originalImage)
-                
+
+                let thumbnail = self.createThumbnail(from: data, maxPixelSize: self.targetImageSize * 2)
+                let image = thumbnail.map { NSImage(cgImage: $0, size: NSSize(width: self.targetImageSize, height: self.targetImageSize)) }
+                let color = image.flatMap { self.averageColor(from: $0) }
+
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self,
                           self.currentFetchId == fetchId,
                           self.lastTrackId == trackId else { return }
-                    
-                    self.artworkImage = downsampledImage ?? originalImage
+
+                    self.artworkImage = image
                     self.dominantColor = color
                 }
             }.resume()
         }
     }
     
-    private func downsample(image: NSImage, to targetSize: CGFloat) -> NSImage? {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return nil
-        }
-        
+    private func createThumbnail(from data: Data, maxPixelSize: CGFloat) -> CGImage? {
         let options: [CFString: Any] = [
             kCGImageSourceShouldCache: false,
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: targetSize * 2
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
         ]
-        
-        guard let imageData = image.tiffRepresentation,
-              let source = CGImageSourceCreateWithData(imageData as CFData, nil),
-              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            return nil
-        }
-        
-        return NSImage(cgImage: thumbnail, size: NSSize(width: targetSize, height: targetSize))
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
     
     private func resetArtwork(for trackId: String, fetchId: UUID) {
@@ -386,7 +455,7 @@ final class SpotifyController: ObservableObject {
                 self.trackName = newTrackName
                 self.artistName = newArtistName
                 self.albumName = newAlbumName
-                self.playbackPosition = 0
+                self.setPlaybackPosition(0)
                 self.fetchArtwork(for: newTrackId)
             }
         }
@@ -398,31 +467,44 @@ final class SpotifyController: ObservableObject {
         var error: NSDictionary?
         let output = script.executeAndReturnError(&error)
         
-        guard let result = output.stringValue else { return nil }
-        
+        guard let result = output.stringValue else {
+            if let error = error { print("[AppleScript] getSpotifyInfo error: \(error)") }
+            return nil
+        }
+
         if result == "not_running" || result == "stopped" {
             return (false, "", "", "", "")
         }
-        
+
         let parts = result.components(separatedBy: "|")
         guard parts.count >= 5 else { return nil }
-        
+
         let isPlaying = parts[0] == "playing"
         return (isPlaying, parts[1], parts[2], parts[3], parts[4])
     }
-    
+
+    private func showControlError() {
+        controlError = "Unable to control Spotify. Check Automation permission in System Settings."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.controlError = nil
+        }
+    }
+
     func playPause() {
         var error: NSDictionary?
         cachedPlayPauseScript?.executeAndReturnError(&error)
+        if error != nil { print("[AppleScript] playPause error: \(error!)"); showControlError() }
     }
 
     func next() {
         var error: NSDictionary?
         cachedNextScript?.executeAndReturnError(&error)
+        if error != nil { print("[AppleScript] next error: \(error!)"); showControlError() }
     }
 
     func previous() {
         var error: NSDictionary?
         cachedPreviousScript?.executeAndReturnError(&error)
+        if error != nil { print("[AppleScript] previous error: \(error!)"); showControlError() }
     }
 }
