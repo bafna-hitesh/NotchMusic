@@ -20,6 +20,7 @@ private let verifierDefaultsKey = "com.notchmusic.pkceVerifier"
 private let authScopes: [String] = [
     "user-read-playback-state",
     "user-read-currently-playing",
+    "user-modify-playback-state",
 ]
 
 extension Notification.Name {

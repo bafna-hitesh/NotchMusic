@@ -4,12 +4,12 @@ import SwiftUI
 // Shared constants to avoid magic number duplication
 enum NotchConstants {
     static let windowWidth: CGFloat = 390
-    static let windowHeight: CGFloat = 170
+    static let windowHeight: CGFloat = 205
     static let collapsedWidth: CGFloat = 310
     static let collapsedHeight: CGFloat = 40
     static let collapsedHeightWithLyrics: CGFloat = 58
     static let expandedWidth: CGFloat = 375
-    static let expandedHeight: CGFloat = 160
+    static let expandedHeight: CGFloat = 195
 }
 
 class PassThroughHostingView<Content: View>: NSHostingView<Content> {

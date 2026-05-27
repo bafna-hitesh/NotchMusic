@@ -248,13 +248,26 @@ struct NotchContentView: View {
                 .padding(.top, 12)
             }
 
+            timelineView
+
             Spacer()
-            
+
             playbackControls
                 .padding(.bottom, 14)
         }
     }
-    
+
+    private var timelineView: some View {
+        TimelineSlider(
+            position: spotify.playbackPosition,
+            duration: spotify.trackDuration,
+            isPlaying: spotify.isPlaying,
+            onSeek: { spotify.seek(to: $0) }
+        )
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+    }
+
     @ViewBuilder
     private var albumArtLarge: some View {
         if let image = spotify.artworkImage {
@@ -576,6 +589,110 @@ struct ControlButton: View {
                     action()
                 }
         )
+    }
+}
+
+struct TimelineSlider: View {
+    let position: TimeInterval
+    let duration: TimeInterval
+    let isPlaying: Bool
+    var onSeek: ((TimeInterval) -> Void)?
+
+    @State private var isDragging = false
+    @State private var dragPosition: TimeInterval = 0
+    @State private var displayPosition: TimeInterval = 0
+    @State private var lastBasePosition: TimeInterval = 0
+    @State private var lastBaseTime = Date()
+
+    private var shownPosition: TimeInterval {
+        isDragging ? dragPosition : displayPosition
+    }
+
+    private var remaining: TimeInterval {
+        max(0, duration - shownPosition)
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(formatTime(shownPosition))
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .foregroundStyle(Color.white.opacity(0.5))
+                .frame(width: 34, alignment: .leading)
+
+            GeometryReader { geo in
+                let p = duration > 0 ? CGFloat(min(max(shownPosition / duration, 0), 1)) : 0
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(height: 2.5)
+
+                    Capsule()
+                        .fill(Color.white.opacity(0.75))
+                        .frame(width: max(0, geo.size.width * p), height: 2.5)
+
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: isDragging ? 12 : 7, height: isDragging ? 12 : 7)
+                        .shadow(color: .black.opacity(0.3), radius: isDragging ? 2 : 0)
+                        .position(x: geo.size.width * p, y: geo.size.height / 2)
+                        .animation(.easeOut(duration: 0.08), value: isDragging)
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard duration > 0 else { return }
+                            if !isDragging { isDragging = true }
+                            let fraction = max(0, min(1, value.location.x / geo.size.width))
+                            dragPosition = TimeInterval(fraction) * duration
+                        }
+                        .onEnded { value in
+                            guard duration > 0 else { return }
+                            let fraction = max(0, min(1, value.location.x / geo.size.width))
+                            dragPosition = TimeInterval(fraction) * duration
+                            displayPosition = dragPosition
+                            lastBasePosition = dragPosition
+                            lastBaseTime = Date()
+                            isDragging = false
+                            onSeek?(dragPosition)
+                        }
+                )
+            }
+            .frame(height: 16)
+
+            Text("-\(formatTime(remaining))")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .foregroundStyle(Color.white.opacity(0.5))
+                .frame(width: 36, alignment: .trailing)
+        }
+        .frame(height: 16)
+        .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
+            guard !isDragging else { return }
+            if isPlaying {
+                displayPosition = lastBasePosition + Date().timeIntervalSince(lastBaseTime)
+            } else {
+                displayPosition = lastBasePosition
+            }
+        }
+        .onChange(of: position) { newPos in
+            lastBasePosition = newPos
+            lastBaseTime = Date()
+            if !isDragging { displayPosition = newPos }
+        }
+        .onAppear {
+            lastBasePosition = position
+            lastBaseTime = Date()
+            displayPosition = position
+        }
+    }
+
+    private func formatTime(_ time: TimeInterval) -> String {
+        guard time.isFinite else { return "0:00" }
+        let totalSeconds = Int(max(0, time))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 

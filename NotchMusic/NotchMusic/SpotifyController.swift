@@ -19,6 +19,7 @@ final class SpotifyController: ObservableObject {
     @Published private(set) var artworkImage: NSImage?
     @Published private(set) var dominantColor: Color?
     @Published var controlError: String?
+    @Published private(set) var trackDuration: TimeInterval = 0
     private var positionBase: TimeInterval = 0
     private var positionBaseTime = Date()
     private var correctionTimer: Timer?
@@ -121,6 +122,11 @@ final class SpotifyController: ObservableObject {
         }
 
         setPlaybackPosition(progressMs / 1000.0)
+
+        if let item = json["item"] as? [String: Any],
+           let durationMs = item["duration_ms"] as? TimeInterval {
+            trackDuration = durationMs / 1000.0
+        }
 
         // If API says paused but we think we're playing, we missed a notification
         // (hardware media key, Touch Bar, etc). Self-correct before drift accumulates.
@@ -258,6 +264,7 @@ final class SpotifyController: ObservableObject {
                 self.artistName = newArtistName
                 self.albumName = newAlbumName
                 self.setPlaybackPosition(0)
+                self.trackDuration = 0
                 self.fetchArtwork(for: trackId)
             }
         }
@@ -456,11 +463,12 @@ final class SpotifyController: ObservableObject {
                 self.artistName = newArtistName
                 self.albumName = newAlbumName
                 self.setPlaybackPosition(0)
+                self.trackDuration = 0
                 self.fetchArtwork(for: newTrackId)
             }
         }
     }
-    
+
     private func getSpotifyInfo() -> (isPlaying: Bool, track: String, artist: String, album: String, trackId: String)? {
         guard let script = cachedScript else { return nil }
         
@@ -506,5 +514,41 @@ final class SpotifyController: ObservableObject {
         var error: NSDictionary?
         cachedPreviousScript?.executeAndReturnError(&error)
         if error != nil { print("[AppleScript] previous error: \(error!)"); showControlError() }
+    }
+
+    func seek(to position: TimeInterval) {
+        let clamped = max(0, min(trackDuration, position))
+        setPlaybackPosition(clamped)
+
+        Task { [weak self] in
+            guard let self else { return }
+            guard let token = await SpotifyAuthController.shared.getValidToken() else {
+                await MainActor.run { self.correctViaAppleScript() }
+                return
+            }
+
+            let positionMs = Int(clamped * 1000)
+            guard let url = URL(string: "https://api.spotify.com/v1/me/player/seek?position_ms=\(positionMs)") else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "PUT"
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            req.timeoutInterval = 5
+
+            guard let (_, response) = try? await self.urlSession.data(for: req),
+                  let http = response as? HTTPURLResponse
+            else {
+                print("[SpotifyAPI] seek network error")
+                await MainActor.run { self.correctViaAppleScript() }
+                return
+            }
+
+            if http.statusCode == 204 { return }
+
+            if http.statusCode == 403 {
+                print("[SpotifyAPI] seek 403 — token may lack user-modify-playback-state scope")
+            } else {
+                print("[SpotifyAPI] seek unexpected status \(http.statusCode)")
+            }
+        }
     }
 }
