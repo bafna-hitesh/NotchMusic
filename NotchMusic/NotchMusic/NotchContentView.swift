@@ -57,6 +57,13 @@ struct NotchContentView: View {
     private let secondaryText = Color.white.opacity(0.5)
     private let tertiaryText = Color.white.opacity(0.3)
     private let barColor = Color.white.opacity(0.8)
+
+    private var lyricColor: Color {
+        if case .matchMusic = lyrics.lyricsColor, let dominant = spotify.dominantColor {
+            return dominant.opacity(0.5)
+        }
+        return lyrics.lyricsColor.color
+    }
     
     private var currentWidth: CGFloat {
         notchState.isExpanded ? NotchConstants.expandedWidth : NotchConstants.collapsedWidth
@@ -128,8 +135,8 @@ struct NotchContentView: View {
 
             if lyrics.hasLyrics, !lyrics.currentLine.isEmpty {
                 Text(lyrics.currentLine)
-                    .font(.system(size: 9, weight: .regular))
-                    .foregroundStyle(tertiaryText)
+                    .font(.system(size: lyrics.fontSize.collapsedSize, weight: .medium))
+                    .foregroundStyle(lyricColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -212,13 +219,13 @@ struct NotchContentView: View {
                 Group {
                     if lyrics.isLoading {
                         Text("Loading lyrics...")
-                            .font(.system(size: 10, weight: .regular))
-                            .foregroundStyle(tertiaryText.opacity(0.6))
+                            .font(.system(size: lyrics.fontSize.expandedSize, weight: .medium))
+                            .foregroundStyle(lyricColor.opacity(0.6))
                             .lineLimit(1)
                     } else {
                         Text(lyrics.currentLine.isEmpty ? " " : lyrics.currentLine)
-                            .font(.system(size: 10, weight: .regular))
-                            .foregroundStyle(tertiaryText)
+                            .font(.system(size: lyrics.fontSize.expandedSize, weight: .medium))
+                            .foregroundStyle(lyricColor)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .id(lyrics.currentLine)

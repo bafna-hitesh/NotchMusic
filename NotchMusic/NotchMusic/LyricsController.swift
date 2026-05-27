@@ -1,5 +1,60 @@
 import Foundation
 import Combine
+import SwiftUI
+
+enum LyricsFontSize: String, CaseIterable {
+    case small, medium, large
+
+    var displayName: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        }
+    }
+
+    var collapsedSize: CGFloat {
+        switch self {
+        case .small: return 7
+        case .medium: return 9
+        case .large: return 11
+        }
+    }
+
+    var expandedSize: CGFloat {
+        switch self {
+        case .small: return 8
+        case .medium: return 10
+        case .large: return 13
+        }
+    }
+}
+
+enum LyricsColorOption: String, CaseIterable {
+    case matchMusic, white, yellow, green, blue, pink
+
+    var displayName: String {
+        switch self {
+        case .matchMusic: return "Match Music"
+        case .white: return "White"
+        case .yellow: return "Yellow"
+        case .green: return "Green"
+        case .blue: return "Blue"
+        case .pink: return "Pink"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .matchMusic: return Color.white.opacity(0.3)
+        case .white: return Color.white.opacity(0.3)
+        case .yellow: return Color.yellow.opacity(0.5)
+        case .green: return Color.green.opacity(0.5)
+        case .blue: return Color.blue.opacity(0.5)
+        case .pink: return Color.pink.opacity(0.5)
+        }
+    }
+}
 
 @MainActor
 final class LyricsController: ObservableObject {
@@ -16,6 +71,30 @@ final class LyricsController: ObservableObject {
             } else {
                 resetLyrics()
             }
+        }
+    }
+
+    @Published var fontSize: LyricsFontSize = {
+        if let raw = UserDefaults.standard.string(forKey: "lyricsFontSize"),
+           let value = LyricsFontSize(rawValue: raw) {
+            return value
+        }
+        return .medium
+    }() {
+        didSet {
+            UserDefaults.standard.set(fontSize.rawValue, forKey: "lyricsFontSize")
+        }
+    }
+
+    @Published var lyricsColor: LyricsColorOption = {
+        if let raw = UserDefaults.standard.string(forKey: "lyricsColor"),
+           let value = LyricsColorOption(rawValue: raw) {
+            return value
+        }
+        return .white
+    }() {
+        didSet {
+            UserDefaults.standard.set(lyricsColor.rawValue, forKey: "lyricsColor")
         }
     }
 

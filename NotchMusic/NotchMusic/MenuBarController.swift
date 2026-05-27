@@ -39,6 +39,16 @@ final class MenuBarController: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.rebuildMenu() }
             .store(in: &cancellables)
+        LyricsController.shared.$fontSize
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildMenu() }
+            .store(in: &cancellables)
+        LyricsController.shared.$lyricsColor
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildMenu() }
+            .store(in: &cancellables)
     }
 
     // MARK: - Menu
@@ -67,6 +77,37 @@ final class MenuBarController: ObservableObject {
         lyricsItem.target = self
         lyricsItem.state = LyricsController.shared.isEnabled ? .on : .off
         menu.addItem(lyricsItem)
+
+        // Lyrics Settings submenu (only when lyrics enabled)
+        if LyricsController.shared.isEnabled {
+            let lyricsSettingsItem = NSMenuItem(title: "Lyrics Settings", action: nil, keyEquivalent: "")
+            let lyricsSettingsSubmenu = NSMenu()
+
+            let fontSizeItem = NSMenuItem(title: "Font Size", action: nil, keyEquivalent: "")
+            let fontSizeSubmenu = NSMenu()
+            for size in LyricsFontSize.allCases {
+                let item = NSMenuItem(title: size.displayName, action: #selector(setFontSize(_:)), keyEquivalent: "")
+                item.target = self
+                item.state = LyricsController.shared.fontSize == size ? .on : .off
+                fontSizeSubmenu.addItem(item)
+            }
+            fontSizeItem.submenu = fontSizeSubmenu
+            lyricsSettingsSubmenu.addItem(fontSizeItem)
+
+            let colorItem = NSMenuItem(title: "Color", action: nil, keyEquivalent: "")
+            let colorSubmenu = NSMenu()
+            for color in LyricsColorOption.allCases {
+                let item = NSMenuItem(title: color.displayName, action: #selector(setLyricsColor(_:)), keyEquivalent: "")
+                item.target = self
+                item.state = LyricsController.shared.lyricsColor == color ? .on : .off
+                colorSubmenu.addItem(item)
+            }
+            colorItem.submenu = colorSubmenu
+            lyricsSettingsSubmenu.addItem(colorItem)
+
+            lyricsSettingsItem.submenu = lyricsSettingsSubmenu
+            menu.addItem(lyricsSettingsItem)
+        }
 
         // Open at Login toggle
         let loginItem = NSMenuItem(
@@ -109,6 +150,16 @@ final class MenuBarController: ObservableObject {
     @MainActor @objc private func toggleShowLyrics() {
         LyricsController.shared.isEnabled.toggle()
         rebuildMenu()
+    }
+
+    @MainActor @objc private func setFontSize(_ sender: NSMenuItem) {
+        guard let size = LyricsFontSize.allCases.first(where: { $0.displayName == sender.title }) else { return }
+        LyricsController.shared.fontSize = size
+    }
+
+    @MainActor @objc private func setLyricsColor(_ sender: NSMenuItem) {
+        guard let color = LyricsColorOption.allCases.first(where: { $0.displayName == sender.title }) else { return }
+        LyricsController.shared.lyricsColor = color
     }
 
     @MainActor @objc private func toggleLoginItem() {

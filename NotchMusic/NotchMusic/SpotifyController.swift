@@ -365,7 +365,7 @@ final class SpotifyController: ObservableObject {
         
         let boostedColor = NSColor(calibratedHue: hue,
                                    saturation: min(1.0, saturation * 1.5),
-                                   brightness: min(1.0, brightness * 1.2),
+                                   brightness: max(0.5, min(1.0, brightness * 1.2)),
                                    alpha: alpha)
         
         return Color(nsColor: boostedColor)

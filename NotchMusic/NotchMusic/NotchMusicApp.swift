@@ -35,7 +35,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
         MenuBarController.shared.setup()
         setupNotchWindow()
         setupDisplayChangeObserver()
@@ -193,36 +192,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func repositionWindow() {
         guard let window = notchWindow, let screen = targetScreen else { return }
-        
-        let screenFrame = screen.frame
-        let x = screenFrame.midX - (NotchConstants.windowWidth / 2)
-        window.setFrameTopLeftPoint(NSPoint(x: x, y: screenFrame.maxY))
+        let maxY = screen.frame.maxY
+        let x = screen.frame.midX - (NotchConstants.windowWidth / 2)
+        window.setFrameTopLeftPoint(NSPoint(x: x, y: maxY))
     }
     
     private func setupNotchWindow() {
         guard let screen = targetScreen else { return }
         
-        let screenFrame = screen.frame
-        let x = screenFrame.midX - (NotchConstants.windowWidth / 2)
-        
+        let maxY = screen.frame.maxY
+        let x = screen.frame.midX - (NotchConstants.windowWidth / 2)
+
         let frame = NSRect(
             x: x,
-            y: screenFrame.maxY - NotchConstants.windowHeight,
+            y: maxY - NotchConstants.windowHeight,
             width: NotchConstants.windowWidth,
             height: NotchConstants.windowHeight
         )
-        
+
         notchWindow = NotchWindow(
             contentRect: frame,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        
+
         let hostingView = PassThroughHostingView(rootView: NotchContentView())
         hostingView.frame = NSRect(x: 0, y: 0, width: NotchConstants.windowWidth, height: NotchConstants.windowHeight)
 
         notchWindow?.contentView = hostingView
-        notchWindow?.setFrameTopLeftPoint(NSPoint(x: x, y: screenFrame.maxY))
+        notchWindow?.setFrameTopLeftPoint(NSPoint(x: x, y: maxY))
     }
 }
