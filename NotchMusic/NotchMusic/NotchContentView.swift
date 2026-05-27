@@ -193,16 +193,27 @@ struct NotchContentView: View {
                 albumArtLarge
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(spotify.trackName.isEmpty ? "Not Playing" : spotify.trackName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(primaryText)
-                        .lineLimit(1)
-                    
-                    Text(spotify.artistName.isEmpty ? "Play something on Spotify" : spotify.artistName)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(secondaryText)
-                        .lineLimit(1)
-                    
+                    HStack(spacing: 0) {
+                        Text(spotify.trackName.isEmpty ? "Not Playing" : spotify.trackName)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(primaryText)
+                            .lineLimit(1)
+
+                        if !spotify.trackName.isEmpty, !spotify.artistName.isEmpty {
+                            Text(" — \(spotify.artistName)")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(secondaryText)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    if spotify.trackName.isEmpty, !spotify.artistName.isEmpty {
+                        Text(spotify.artistName)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                            .lineLimit(1)
+                    }
+
                     if !spotify.albumName.isEmpty {
                         Text(spotify.albumName)
                             .font(.system(size: 10, weight: .regular))
@@ -213,7 +224,7 @@ struct NotchContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 14)
+            .padding(.top, 44)
 
             if lyrics.hasLyrics || lyrics.isLoading {
                 Group {
