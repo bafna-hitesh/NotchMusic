@@ -63,6 +63,8 @@ final class LyricsController: ObservableObject {
     @Published private(set) var currentLine: String = ""
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var hasLyrics: Bool = false
+    @Published private(set) var plainLyricsText: String = ""
+    @Published private(set) var isPlainMode: Bool = false
     @Published var isEnabled: Bool = UserDefaults.standard.bool(forKey: "showLyrics") {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "showLyrics")
@@ -119,40 +121,57 @@ final class LyricsController: ObservableObject {
     }
 
     private func setupObservers() {
-        let spotify = SpotifyController.shared
+        let mediaController = MediaController.shared
 
         if isEnabled {
-            let currentTrack = spotify.trackName
-            let currentArtist = spotify.artistName
+            let currentTrack = mediaController.trackName
+            let currentArtist = mediaController.artistName
             if !currentTrack.isEmpty, !currentArtist.isEmpty {
                 fetchLyrics(artist: currentArtist, track: currentTrack)
             }
         }
 
-        spotify.$trackName
+        mediaController.$trackName
             .receive(on: DispatchQueue.main)
             .sink { [weak self] track in
                 guard let self = self else { return }
-                guard self.isEnabled else { return }
-                let artist = SpotifyController.shared.artistName
-                guard !track.isEmpty, !artist.isEmpty else { return }
+                guard self.isEnabled else {
+                    print("[Lyrics] track changed but isEnabled=false, skipping")
+                    return
+                }
+                let artist = MediaController.shared.artistName
+                guard !track.isEmpty, !artist.isEmpty else {
+                    print("[Lyrics] track=\"\(track)\" artist=\"\(artist)\" — empty, skipping")
+                    return
+                }
+                print("[Lyrics] track changed: \"\(track)\" by \"\(artist)\", fetching...")
                 self.resetLyrics()
                 self.fetchLyrics(artist: artist, track: track)
             }
             .store(in: &cancellables)
 
-        spotify.$isPlaying
+        mediaController.$isPlaying
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isPlaying in
+                guard let self else { return }
+                if self.isPlainMode { return }
                 if isPlaying {
-                    self?.startLyricTimer()
+                    self.startLyricTimer()
                 } else {
-                    self?.stopLyricTimer()
+                    self.stopLyricTimer()
                 }
             }
             .store(in: &cancellables)
 
-        if spotify.isPlaying {
+        mediaController.$trackDuration
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updatePlainMode()
+            }
+            .store(in: &cancellables)
+
+        if mediaController.isPlaying, !isPlainMode {
             startLyricTimer()
         }
     }
@@ -161,7 +180,7 @@ final class LyricsController: ObservableObject {
         stopLyricTimer()
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.updateLine(for: SpotifyController.shared.playbackPosition)
+            self.updateLine(for: MediaController.shared.playbackPosition)
         }
         timer.tolerance = 0.3
         RunLoop.main.add(timer, forMode: .common)
@@ -178,11 +197,13 @@ final class LyricsController: ObservableObject {
     private func fetchLyrics(artist: String, track: String) {
         currentFetchTask?.cancel()
         isLoading = true
+        print("[Lyrics] fetching: \"\(track)\" by \"\(artist)\"")
 
         guard let artistEncoded = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let trackEncoded = track.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://lrclib.net/api/get?artist_name=\(artistEncoded)&track_name=\(trackEncoded)") else {
             isLoading = false
+            print("[Lyrics] failed to build URL")
             return
         }
 
@@ -254,15 +275,34 @@ final class LyricsController: ObservableObject {
 
     private func processLyrics(_ response: LRCLibResponse) {
         isLoading = false
+        print("[Lyrics] response — synced=\(response.syncedLyrics != nil) plain=\(response.plainLyrics != nil)")
 
-        if let synced = response.syncedLyrics, !synced.isEmpty {
+        let hasPosition = MediaController.shared.trackDuration > 0
+
+        if let synced = response.syncedLyrics, !synced.isEmpty, hasPosition {
             syncedLines = parseLRC(synced)
             if !syncedLines.isEmpty {
                 isSynced = true
                 hasLyrics = true
+                isPlainMode = false
+                plainLyricsText = ""
+                print("[Lyrics] synced lyrics parsed: \(syncedLines.count) lines")
                 restartTimerIfPlaying()
                 return
             }
+        }
+
+        // If no position data or no synced lyrics, use plain text
+        if let synced = response.syncedLyrics, !synced.isEmpty, !hasPosition {
+            // We have synced data but can't sync — extract just the text
+            let lines = parseLRC(synced).map { $0.text }
+            plainLines = lines
+            plainLyricsText = lines.joined(separator: "\n")
+            isSynced = false
+            hasLyrics = true
+            isPlainMode = true
+            stopLyricTimer()
+            return
         }
 
         if let plain = response.plainLyrics, !plain.isEmpty {
@@ -273,16 +313,30 @@ final class LyricsController: ObservableObject {
                 }
                 .filter { !$0.isEmpty }
             isSynced = false
-            hasLyrics = !plainLines.isEmpty
-            currentLine = plainLines.first ?? ""
+            hasLyrics = true
+            plainLyricsText = plain
+            // Check if we should use plain mode (no position = browser source)
+            updatePlainMode()
             return
         }
 
         hasLyrics = false
+        plainLyricsText = ""
+        isPlainMode = false
+    }
+
+    private func updatePlainMode() {
+        let hasPosition = MediaController.shared.trackDuration > 0
+        isPlainMode = !isSynced || !hasPosition
+        if isPlainMode {
+            stopLyricTimer()
+        } else {
+            restartTimerIfPlaying()
+        }
     }
 
     private func restartTimerIfPlaying() {
-        guard SpotifyController.shared.isPlaying else { return }
+        guard MediaController.shared.isPlaying else { return }
         startLyricTimer()
     }
 
@@ -350,9 +404,9 @@ final class LyricsController: ObservableObject {
     }
 
     private func triggerFetchForCurrentTrack() {
-        let spotify = SpotifyController.shared
-        let track = spotify.trackName
-        let artist = spotify.artistName
+        let mediaController = MediaController.shared
+        let track = mediaController.trackName
+        let artist = mediaController.artistName
         guard !track.isEmpty, !artist.isEmpty else { return }
         resetLyrics()
         fetchLyrics(artist: artist, track: track)

@@ -23,13 +23,13 @@ final class MenuBarController: ObservableObject {
         rebuildMenu()
 
         // Update menu when track info or lyrics toggle changes
-        let spotify = SpotifyController.shared
-        spotify.$trackName
+        let mediaController = MediaController.shared
+        mediaController.$trackName
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.rebuildMenu() }
             .store(in: &cancellables)
-        spotify.$artistName
+        mediaController.$artistName
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.rebuildMenu() }
@@ -58,8 +58,8 @@ final class MenuBarController: ObservableObject {
 
         // Track info title
         let infoItem = NSMenuItem()
-        let track = SpotifyController.shared.trackName
-        let artist = SpotifyController.shared.artistName
+        let track = MediaController.shared.trackName
+        let artist = MediaController.shared.artistName
         if track.isEmpty {
             infoItem.attributedTitle = disabledTitle("Not Playing")
         } else {

@@ -46,7 +46,7 @@ final class NotchStateController: ObservableObject {
 }
 
 struct NotchContentView: View {
-    @ObservedObject private var spotify = SpotifyController.shared
+    @ObservedObject private var mediaController = MediaController.shared
     @ObservedObject private var lyrics = LyricsController.shared
     @ObservedObject private var notchState = NotchStateController.shared
     @State private var isHovering = false
@@ -59,7 +59,7 @@ struct NotchContentView: View {
     private let barColor = Color.white.opacity(0.8)
 
     private var lyricColor: Color {
-        if case .matchMusic = lyrics.lyricsColor, let dominant = spotify.dominantColor {
+        if case .matchMusic = lyrics.lyricsColor, let dominant = mediaController.dominantColor {
             return dominant.opacity(0.5)
         }
         return lyrics.lyricsColor.color
@@ -95,9 +95,9 @@ struct NotchContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
-                MusicBarsAnimationController.shared.isAnimating = spotify.isPlaying
+                MusicBarsAnimationController.shared.isAnimating = mediaController.isPlaying
             }
-            .onChange(of: spotify.isPlaying) { newValue in
+            .onChange(of: mediaController.isPlaying) { newValue in
                 MusicBarsAnimationController.shared.isAnimating = newValue
             }
     }
@@ -128,7 +128,7 @@ struct NotchContentView: View {
 
                 Spacer()
 
-                MusicBarsView(barCount: 4, spacing: 2, color: spotify.dominantColor ?? barColor)
+                MusicBarsView(barCount: 4, spacing: 2, color: mediaController.dominantColor ?? barColor)
                     .frame(width: 16, height: 10)
                     .padding(.trailing, 20)
             }
@@ -142,8 +142,8 @@ struct NotchContentView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 20)
                     .padding(.top, 4)
-            } else if spotify.isSpotifyRunning, spotify.trackName.isEmpty {
-                Text("Open Spotify")
+            } else if mediaController.trackName.isEmpty {
+                Text("No media playing")
                     .font(.system(size: 8, weight: .regular))
                     .foregroundStyle(tertiaryText)
                     .padding(.top, 4)
@@ -151,13 +151,13 @@ struct NotchContentView: View {
         }
         .padding(.top, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(spotify.trackName.isEmpty ? "Not Playing" : spotify.trackName) by \(spotify.artistName)")
+        .accessibilityLabel("\(mediaController.trackName.isEmpty ? "Not Playing" : mediaController.trackName) by \(mediaController.artistName)")
         .accessibilityHint("Click to expand music controls")
     }
 
     @ViewBuilder
     private var albumArtMini: some View {
-        if let image = spotify.artworkImage {
+        if let image = mediaController.artworkImage {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
@@ -172,7 +172,7 @@ struct NotchContentView: View {
         RoundedRectangle(cornerRadius: 5, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: spotify.isPlaying
+                    colors: mediaController.isPlaying
                         ? [Color(red: 0.3, green: 0.3, blue: 0.35), Color(red: 0.2, green: 0.2, blue: 0.25)]
                         : [Color(white: 0.15), Color(white: 0.1)],
                     startPoint: .topLeading,
@@ -194,28 +194,28 @@ struct NotchContentView: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 0) {
-                        Text(spotify.trackName.isEmpty ? "Not Playing" : spotify.trackName)
+                        Text(mediaController.trackName.isEmpty ? "Not Playing" : mediaController.trackName)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(primaryText)
                             .lineLimit(1)
 
-                        if !spotify.trackName.isEmpty, !spotify.artistName.isEmpty {
-                            Text(" — \(spotify.artistName)")
+                        if !mediaController.trackName.isEmpty, !mediaController.artistName.isEmpty {
+                            Text(" — \(mediaController.artistName)")
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(secondaryText)
                                 .lineLimit(1)
                         }
                     }
 
-                    if spotify.trackName.isEmpty, !spotify.artistName.isEmpty {
-                        Text(spotify.artistName)
+                    if mediaController.trackName.isEmpty, !mediaController.artistName.isEmpty {
+                        Text(mediaController.artistName)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(secondaryText)
                             .lineLimit(1)
                     }
 
-                    if !spotify.albumName.isEmpty {
-                        Text(spotify.albumName)
+                    if !mediaController.albumName.isEmpty {
+                        Text(mediaController.albumName)
                             .font(.system(size: 10, weight: .regular))
                             .foregroundStyle(tertiaryText)
                             .lineLimit(1)
@@ -233,6 +233,15 @@ struct NotchContentView: View {
                             .font(.system(size: lyrics.fontSize.expandedSize, weight: .medium))
                             .foregroundStyle(lyricColor.opacity(0.6))
                             .lineLimit(1)
+                    } else if lyrics.isPlainMode {
+                        ScrollView(.vertical) {
+                            Text(lyrics.plainLyricsText)
+                                .font(.system(size: lyrics.fontSize.expandedSize, weight: .medium))
+                                .foregroundStyle(lyricColor)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
+                        .frame(maxHeight: 80)
                     } else {
                         Text(lyrics.currentLine.isEmpty ? " " : lyrics.currentLine)
                             .font(.system(size: lyrics.fontSize.expandedSize, weight: .medium))
@@ -258,19 +267,23 @@ struct NotchContentView: View {
     }
 
     private var timelineView: some View {
-        TimelineSlider(
-            position: spotify.playbackPosition,
-            duration: spotify.trackDuration,
-            isPlaying: spotify.isPlaying,
-            onSeek: { spotify.seek(to: $0) }
-        )
-        .padding(.horizontal, 24)
-        .padding(.top, 8)
+        Group {
+            if mediaController.trackDuration > 0 {
+                TimelineSlider(
+                    position: mediaController.playbackPosition,
+                    duration: mediaController.trackDuration,
+                    isPlaying: mediaController.isPlaying,
+                    onSeek: { mediaController.seek(to: $0) }
+                )
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
+            }
+        }
     }
 
     @ViewBuilder
     private var albumArtLarge: some View {
-        if let image = spotify.artworkImage {
+        if let image = mediaController.artworkImage {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
@@ -284,10 +297,10 @@ struct NotchContentView: View {
     
     private var largeOverlay: some View {
         Group {
-            if spotify.isPlaying {
+            if mediaController.isPlaying {
                 ZStack {
                     Color.black.opacity(0.3)
-                    MusicBarsView(barCount: 4, spacing: 2, color: spotify.dominantColor ?? barColor)
+                    MusicBarsView(barCount: 4, spacing: 2, color: mediaController.dominantColor ?? barColor)
                         .frame(width: 18, height: 16)
                 }
             }
@@ -298,7 +311,7 @@ struct NotchContentView: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: spotify.isPlaying
+                    colors: mediaController.isPlaying
                         ? [Color(red: 0.4, green: 0.25, blue: 0.7), Color(red: 0.25, green: 0.35, blue: 0.8)]
                         : [Color(white: 0.12), Color(white: 0.08)],
                     startPoint: .topLeading,
@@ -308,8 +321,8 @@ struct NotchContentView: View {
             .frame(width: 58, height: 58)
             .overlay(
                 Group {
-                    if spotify.isPlaying {
-                        MusicBarsView(barCount: 4, spacing: 2, color: spotify.dominantColor ?? barColor)
+                    if mediaController.isPlaying {
+                        MusicBarsView(barCount: 4, spacing: 2, color: mediaController.dominantColor ?? barColor)
                             .frame(width: 18, height: 16)
                     } else {
                         Image(systemName: "music.note")
@@ -324,19 +337,19 @@ struct NotchContentView: View {
         VStack(spacing: 6) {
             HStack(spacing: 32) {
                 ControlButton(systemName: "backward.fill", size: 14) {
-                    spotify.previous()
+                    mediaController.previous()
                 }
 
-                ControlButton(systemName: spotify.isPlaying ? "pause.fill" : "play.fill", size: 20, isPrimary: true) {
-                    spotify.playPause()
+                ControlButton(systemName: mediaController.isPlaying ? "pause.fill" : "play.fill", size: 20, isPrimary: true) {
+                    mediaController.playPause()
                 }
 
                 ControlButton(systemName: "forward.fill", size: 14) {
-                    spotify.next()
+                    mediaController.next()
                 }
             }
 
-            if let error = spotify.controlError {
+            if let error = mediaController.controlError {
                 Text(error)
                     .font(.system(size: 9))
                     .foregroundStyle(.red.opacity(0.7))
@@ -420,7 +433,8 @@ final class MusicBarsAnimationController: ObservableObject {
     @Published private(set) var heights: [CGFloat] = [0.2, 0.2, 0.2, 0.2]
 
     private var timer: Timer?
-    private var spotifyObserver: Any?
+    private var startedObserver: Any?
+    private var stoppedObserver: Any?
 
     @Published var isAnimating: Bool = false {
         didSet {
@@ -429,13 +443,19 @@ final class MusicBarsAnimationController: ObservableObject {
     }
 
     private init() {
-        spotifyObserver = NotificationCenter.default.addObserver(
-            forName: .spotifyRunningStateChanged,
+        startedObserver = NotificationCenter.default.addObserver(
+            forName: .mediaPlaybackStarted,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
-            let isRunning = notification.userInfo?["isRunning"] as? Bool ?? false
-            if !isRunning { self?.isAnimating = false }
+        ) { [weak self] _ in
+            self?.isAnimating = true
+        }
+        stoppedObserver = NotificationCenter.default.addObserver(
+            forName: .mediaPlaybackStopped,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isAnimating = false
         }
     }
 
@@ -462,7 +482,8 @@ final class MusicBarsAnimationController: ObservableObject {
 
     deinit {
         stop()
-        if let observer = spotifyObserver { NotificationCenter.default.removeObserver(observer) }
+        if let o = startedObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = stoppedObserver { NotificationCenter.default.removeObserver(o) }
     }
 }
 
@@ -600,12 +621,10 @@ struct TimelineSlider: View {
 
     @State private var isDragging = false
     @State private var dragPosition: TimeInterval = 0
-    @State private var displayPosition: TimeInterval = 0
-    @State private var lastBasePosition: TimeInterval = 0
-    @State private var lastBaseTime = Date()
+    @State private var tick = 0
 
     private var shownPosition: TimeInterval {
-        isDragging ? dragPosition : displayPosition
+        isDragging ? dragPosition : position
     }
 
     private var remaining: TimeInterval {
@@ -651,9 +670,6 @@ struct TimelineSlider: View {
                             guard duration > 0 else { return }
                             let fraction = max(0, min(1, value.location.x / geo.size.width))
                             dragPosition = TimeInterval(fraction) * duration
-                            displayPosition = dragPosition
-                            lastBasePosition = dragPosition
-                            lastBaseTime = Date()
                             isDragging = false
                             onSeek?(dragPosition)
                         }
@@ -668,22 +684,7 @@ struct TimelineSlider: View {
         }
         .frame(height: 16)
         .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
-            guard !isDragging else { return }
-            if isPlaying {
-                displayPosition = lastBasePosition + Date().timeIntervalSince(lastBaseTime)
-            } else {
-                displayPosition = lastBasePosition
-            }
-        }
-        .onChange(of: position) { newPos in
-            lastBasePosition = newPos
-            lastBaseTime = Date()
-            if !isDragging { displayPosition = newPos }
-        }
-        .onAppear {
-            lastBasePosition = position
-            lastBaseTime = Date()
-            displayPosition = position
+            tick += 1
         }
     }
 

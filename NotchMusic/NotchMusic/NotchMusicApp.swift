@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var globalEventMonitor: Any?
     private var displayChangeObserver: Any?
     private var playbackObserver: Any?
-    private var spotifyRunningObserver: Any?
+    private var mediaStateObserver: Any?
     private var authResetObserver: Any?
     private var authAttempted = false
     private var cancellables = Set<AnyCancellable>()
@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupNotchWindow()
         setupDisplayChangeObserver()
         setupPlaybackObserver()
-        setupSpotifyRunningObserver()
+        setupMediaStateObserver()
 
         // Toggle mouse passthrough: collapsed = transparent, expanded = interactive
         NotchStateController.shared.$isExpanded
@@ -56,11 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return event
         }
 
-        let isSpotifyRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.spotify.client" }
-        if isSpotifyRunning {
-            notchWindow?.orderFrontRegardless()
-            setupGlobalEventMonitor()
-        }
+        notchWindow?.orderFrontRegardless()
+        setupGlobalEventMonitor()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -80,9 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(observer)
             playbackObserver = nil
         }
-        if let observer = spotifyRunningObserver {
+        if let observer = mediaStateObserver {
             NotificationCenter.default.removeObserver(observer)
-            spotifyRunningObserver = nil
+            mediaStateObserver = nil
         }
         if let observer = authResetObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -99,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupPlaybackObserver() {
         playbackObserver = NotificationCenter.default.addObserver(
-            forName: .spotifyPlaybackStarted,
+            forName: .mediaPlaybackStarted,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -110,7 +107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             NotchStateController.shared.expand()
 
-            if !self.authAttempted {
+            let spotifyRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.spotify.client" }
+            if !self.authAttempted, spotifyRunning {
                 self.authAttempted = true
                 let auth = SpotifyAuthController.shared
                 print("[App] playback started — isConfigured=\(auth.isConfigured), isAuthenticated=\(auth.isAuthenticated)")
@@ -130,24 +128,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func setupSpotifyRunningObserver() {
-        spotifyRunningObserver = NotificationCenter.default.addObserver(
-            forName: .spotifyRunningStateChanged,
+    private func setupMediaStateObserver() {
+        mediaStateObserver = NotificationCenter.default.addObserver(
+            forName: .mediaPlaybackStopped,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
-            guard let self = self, let window = self.notchWindow else { return }
-
-            let isRunning = notification.userInfo?["isRunning"] as? Bool ?? false
-
-            if isRunning {
-                window.orderFrontRegardless()
-                self.setupGlobalEventMonitor()
-            } else {
-                self.removeGlobalEventMonitor()
-                NotchStateController.shared.collapse()
-                window.orderOut(nil)
-            }
+        ) { [weak self] _ in
+            NotchStateController.shared.collapse()
         }
     }
 

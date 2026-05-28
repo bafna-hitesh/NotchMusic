@@ -27,9 +27,9 @@
 	<key>SpotifyClientID</key>
 	<string>$(SPOTIFY_CLIENT_ID)</string>
 
-    <key>NSAppleEventsUsageDescription</key>
-    <string>NotchMusic needs to control Spotify to display now playing information and control playback.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>NotchMusic needs to control music apps to display now playing information and control playback.</string>
 </dict>
 </plist>
